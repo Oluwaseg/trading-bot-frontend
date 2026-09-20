@@ -1,6 +1,6 @@
-# Trading Bot Dashboard
+# Profit Pilot
 
-A modern, responsive Next.js dashboard for managing the Trading Bot API. Built with React, TypeScript, Tailwind CSS, and Axios.
+A modern, responsive Next.js dashboard for managing the Profit Pilot API. Built with React, TypeScript, Tailwind CSS, and Axios.
 
 ## Features
 

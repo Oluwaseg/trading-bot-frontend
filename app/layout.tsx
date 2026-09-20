@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Trading Bot Dashboard',
-  description: 'Automated EMA Cross Trading Bot Dashboard',
+  title: 'Profit Pilot',
+  description: 'Automated market intelligence for EMA strategies',
 };
 
 export default function RootLayout({
