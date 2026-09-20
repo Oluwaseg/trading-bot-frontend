@@ -14,6 +14,7 @@ import {
   ASSET_CLASS_OPTIONS,
   BROKER_OPTIONS,
   SYMBOL_OPTIONS_BY_BROKER_AND_CLASS,
+  TIMEFRAME_OPTIONS_BY_BROKER,
 } from '../../lib/trading-constants';
 import { InstrumentBoard } from './instrument-board';
 import {
@@ -45,10 +46,11 @@ export function DashboardApp(d: TradingDashboard) {
     globalSuccess,
     health,
     tokenStatus,
+    capitalMarkets,
     tokenInput,
     setTokenInput,
-    mt5Credentials,
-    setMt5Credentials,
+    capitalCredentials,
+    setCapitalCredentials,
     saveTokenMutation,
     deleteTokenMutation,
     instrumentStates,
@@ -85,13 +87,6 @@ export function DashboardApp(d: TradingDashboard) {
     closePositionMutation.isPending ||
     removeInstrumentMutation.isPending;
 
-  const mt5BridgeEnabled = Boolean(health?.mt5Bridge?.enabled);
-  const mt5BridgeStatusText = mt5BridgeEnabled
-    ? health?.mt5Bridge?.status === 'live_ready'
-      ? 'MT5 bridge live'
-      : 'MT5 bridge enabled'
-    : 'MT5 bridge disabled';
-
   const preferredDerivAccountId = tokenStatus?.preferredDerivAccountId ?? null;
   const connectedDerivAccountId =
     tokenStatus?.runtimeConnected?.accountId ?? null;
@@ -104,13 +99,32 @@ export function DashboardApp(d: TradingDashboard) {
   const newInstrumentBroker = newInstrument.brokerType ?? 'deriv_ws';
   const newInstrumentAssetClass =
     newInstrument.assetClass ??
-    (newInstrumentBroker === 'mt5_prime' ? 'Forex' : 'Synthetic Indices');
+    (newInstrumentBroker === 'capital' ? 'Forex' : 'Synthetic Indices');
+  const capitalSymbols = capitalMarkets
+    .filter((market) => {
+      const type = String(market.instrumentType || '').toUpperCase();
+      if (newInstrumentAssetClass === 'Forex') return type === 'CURRENCIES';
+      if (newInstrumentAssetClass === 'Commodities')
+        return type === 'COMMODITIES';
+      if (newInstrumentAssetClass === 'Indices') return type === 'INDICES';
+      if (newInstrumentAssetClass === 'Stocks') return type === 'SHARES';
+      if (newInstrumentAssetClass === 'Crypto')
+        return type === 'CRYPTOCURRENCIES';
+      return false;
+    })
+    .map((market) => market.epic)
+    .filter(Boolean);
   const defaultInstrumentSymbols =
-    SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws['Synthetic Indices'] ?? [];
+    newInstrumentBroker === 'capital'
+      ? capitalSymbols
+      : (SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws['Synthetic Indices'] ??
+        []);
   const newInstrumentSymbols =
-    SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[newInstrumentBroker]?.[
-      newInstrumentAssetClass
-    ] ?? defaultInstrumentSymbols;
+    newInstrumentBroker === 'capital'
+      ? capitalSymbols
+      : (SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[newInstrumentBroker]?.[
+          newInstrumentAssetClass
+        ] ?? defaultInstrumentSymbols);
 
   return (
     <div className='flex min-h-screen bg-background text-foreground'>
@@ -272,12 +286,8 @@ export function DashboardApp(d: TradingDashboard) {
                   <MiniStat
                     label='Token'
                     value={
-                      tokenStatus?.configured || tokenStatus?.mt5Configured
-                        ? tokenStatus?.configured && tokenStatus?.mt5Configured
-                          ? `Deriv ••••${tokenStatus.tokenLast4} • MT5 ••••${tokenStatus.mt5LoginLast4 ?? tokenStatus.mt5AccountLast4 ?? ''}`
-                          : tokenStatus?.configured
-                            ? `Deriv ••••${tokenStatus.tokenLast4}`
-                            : `MT5 ••••${tokenStatus.mt5LoginLast4 ?? tokenStatus.mt5AccountLast4 ?? ''}`
+                      tokenStatus?.configured
+                        ? `Deriv ••••${tokenStatus.tokenLast4}`
                         : 'Not set'
                     }
                   />
@@ -391,29 +401,38 @@ export function DashboardApp(d: TradingDashboard) {
                       label='Broker'
                       value={newInstrumentBroker}
                       onChange={(value) => {
-                        const nextBroker = value as 'deriv_ws' | 'mt5_prime';
-                        const fallbackAsset =
-                          nextBroker === 'mt5_prime'
-                            ? 'Forex'
-                            : 'Synthetic Indices';
+                        const nextBroker = value as 'deriv_ws' | 'capital';
+                        const fallbackAsset = 'Synthetic Indices';
                         const nextAsset =
-                          nextBroker === 'deriv_ws'
-                            ? 'Synthetic Indices'
-                            : fallbackAsset;
+                          nextBroker === 'capital' ? 'Forex' : fallbackAsset;
+                        const nextTimeFrame =
+                          TIMEFRAME_OPTIONS_BY_BROKER[nextBroker][0].value;
                         const brokerSymbols =
                           SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[nextBroker] ?? {};
                         const symbols =
-                          brokerSymbols[nextAsset] ??
-                          SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws[
-                            'Synthetic Indices'
-                          ] ??
-                          [];
+                          nextBroker === 'capital'
+                            ? capitalMarkets
+                                .filter(
+                                  (market) =>
+                                    String(
+                                      market.instrumentType || ''
+                                    ).toUpperCase() === 'CURRENCIES'
+                                )
+                                .map((market) => market.epic)
+                            : (brokerSymbols[nextAsset] ??
+                              SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws[
+                                'Synthetic Indices'
+                              ] ??
+                              []);
 
                         setNewInstrument((prev) => ({
                           ...prev,
                           brokerType: nextBroker,
                           assetClass: nextAsset,
                           symbol: symbols[0] ?? prev.symbol,
+                          timeFrame: nextTimeFrame,
+                          positionSize:
+                            nextBroker === 'capital' ? 100 : prev.positionSize,
                         }));
                       }}
                       options={BROKER_OPTIONS.map((b) => ({
@@ -430,17 +449,37 @@ export function DashboardApp(d: TradingDashboard) {
                           | 'Forex'
                           | 'Stocks'
                           | 'Commodities'
-                          | 'Indices';
+                          | 'Indices'
+                          | 'Crypto';
                         const brokerSymbols =
                           SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[
                             newInstrumentBroker
                           ] ?? {};
                         const symbols =
-                          brokerSymbols[nextAsset] ??
-                          SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws[
-                            'Synthetic Indices'
-                          ] ??
-                          [];
+                          newInstrumentBroker === 'capital'
+                            ? capitalMarkets
+                                .filter((market) => {
+                                  const type = String(
+                                    market.instrumentType || ''
+                                  ).toUpperCase();
+                                  if (nextAsset === 'Forex')
+                                    return type === 'CURRENCIES';
+                                  if (nextAsset === 'Commodities')
+                                    return type === 'COMMODITIES';
+                                  if (nextAsset === 'Indices')
+                                    return type === 'INDICES';
+                                  if (nextAsset === 'Stocks')
+                                    return type === 'SHARES';
+                                  if (nextAsset === 'Crypto')
+                                    return type === 'CRYPTOCURRENCIES';
+                                  return false;
+                                })
+                                .map((market) => market.epic)
+                            : (brokerSymbols[nextAsset] ??
+                              SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws[
+                                'Synthetic Indices'
+                              ] ??
+                              []);
 
                         setNewInstrument((prev) => ({
                           ...prev,
@@ -494,9 +533,7 @@ export function DashboardApp(d: TradingDashboard) {
                         }))
                       }
                       options={[
-                        { value: '1m', label: '1m' },
-                        { value: '5m', label: '5m' },
-                        { value: '15m', label: '15m' },
+                        ...TIMEFRAME_OPTIONS_BY_BROKER[newInstrumentBroker],
                       ]}
                     />
                     <NumberField
@@ -510,7 +547,11 @@ export function DashboardApp(d: TradingDashboard) {
                       }
                     />
                     <NumberField
-                      label='Stake'
+                      label={
+                        newInstrumentBroker === 'capital'
+                          ? 'Size (units)'
+                          : 'Stake'
+                      }
                       value={newInstrument.positionSize}
                       onChange={(value) =>
                         setNewInstrument((prev) => ({
@@ -535,16 +576,18 @@ export function DashboardApp(d: TradingDashboard) {
                         },
                       ]}
                     />
-                    <NumberField
-                      label='Multiplier'
-                      value={newInstrument.multiplier}
-                      onChange={(value) =>
-                        setNewInstrument((prev) => ({
-                          ...prev,
-                          multiplier: value,
-                        }))
-                      }
-                    />
+                    {newInstrumentBroker !== 'capital' ? (
+                      <NumberField
+                        label='Multiplier'
+                        value={newInstrument.multiplier}
+                        onChange={(value) =>
+                          setNewInstrument((prev) => ({
+                            ...prev,
+                            multiplier: value,
+                          }))
+                        }
+                      />
+                    ) : null}
                     <NumberField
                       label='Stop loss (USD, 0=off)'
                       value={newInstrument.stopLossAmount ?? 0}
@@ -565,32 +608,15 @@ export function DashboardApp(d: TradingDashboard) {
                         }))
                       }
                     />
-                    <NumberField
-                      label='Cooldown (sec, 0=off)'
-                      value={newInstrument.tradeCooldownSeconds ?? 0}
-                      onChange={(value) =>
-                        setNewInstrument((prev) => ({
-                          ...prev,
-                          tradeCooldownSeconds: value,
-                        }))
-                      }
-                    />
-                    <NumberField
-                      label='Min EMA gap (bps, 0=off)'
-                      value={newInstrument.minEmaSeparationBps ?? 0}
-                      onChange={(value) =>
-                        setNewInstrument((prev) => ({
-                          ...prev,
-                          minEmaSeparationBps: value,
-                        }))
-                      }
-                    />
                     <div className='flex items-end md:col-span-2 xl:col-span-4'>
                       <ButtonPrimary
                         className='w-full'
                         disabled={addInstrumentMutation.isPending}
                         onClick={() =>
-                          addInstrumentMutation.mutate(newInstrument)
+                          addInstrumentMutation.mutate({
+                            ...newInstrument,
+                            strategy: 'fixed_isolated_stake',
+                          })
                         }
                       >
                         {addInstrumentMutation.isPending ? 'Saving…' : 'Create'}
@@ -606,6 +632,7 @@ export function DashboardApp(d: TradingDashboard) {
                   onToggle={(symbol) => toggleInstrumentMutation.mutate(symbol)}
                   onClose={(symbol) => closePositionMutation.mutate(symbol)}
                   onRemove={(symbol) => removeInstrumentMutation.mutate(symbol)}
+                  capitalMarkets={capitalMarkets}
                   onUpdateInstrument={async (
                     symbol,
                     updates
@@ -629,14 +656,14 @@ export function DashboardApp(d: TradingDashboard) {
             <Panel
               title='Broker credentials'
               actions={
-                tokenStatus?.configured || tokenStatus?.mt5Configured ? (
+                tokenStatus?.configured || tokenStatus?.capitalConfigured ? (
                   <span className='text-xs text-muted-foreground'>
                     Updated {formatDate(tokenStatus.updatedAt)}
                   </span>
                 ) : null
               }
             >
-              <div className='mb-5 grid gap-3 sm:grid-cols-3'>
+              <div className='mb-5 grid gap-3 sm:grid-cols-2'>
                 <div className='rounded-xl border border-border bg-background/40 p-3'>
                   <p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground'>
                     Deriv
@@ -649,26 +676,14 @@ export function DashboardApp(d: TradingDashboard) {
                 </div>
                 <div className='rounded-xl border border-border bg-background/40 p-3'>
                   <p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground'>
-                    MT5
+                    Capital API
                   </p>
                   <p className='mt-2 text-sm font-medium text-foreground'>
-                    {tokenStatus?.mt5Configured
-                      ? 'MT5 saved for testing'
-                      : 'MT5 not saved'}
+                    Capital API configured
                   </p>
-                </div>
-                <div className='rounded-xl border border-border bg-background/40 p-3'>
-                  <p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground'>
-                    Bridge
+                  <p className='mt-1 text-[11px] text-muted-foreground'>
+                    Direct API broker path.
                   </p>
-                  <p className='mt-2 text-sm font-medium text-foreground'>
-                    {mt5BridgeStatusText}
-                  </p>
-                  {health?.mt5Bridge?.message ? (
-                    <p className='mt-1 text-[11px] text-muted-foreground'>
-                      {health.mt5Bridge.message}
-                    </p>
-                  ) : null}
                 </div>
               </div>
 
@@ -712,84 +727,80 @@ export function DashboardApp(d: TradingDashboard) {
 
                 <div className='rounded-xl border border-border bg-background/40 p-4'>
                   <h3 className='mb-3 text-sm font-semibold text-foreground'>
-                    MT5 / direct bridge
+                    Capital API
                   </h3>
                   <div className='mb-3 flex items-center gap-2'>
                     <span
                       className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
-                        tokenStatus?.mt5ReadyForTesting
-                          ? 'bg-amber-500/15 text-amber-300'
+                        tokenStatus?.capitalConfigured
+                          ? 'bg-emerald-500/15 text-emerald-300'
                           : 'bg-muted text-muted-foreground'
                       }`}
                     >
-                      {tokenStatus?.mt5ReadyForTesting
-                        ? 'Configured but not active'
+                      {tokenStatus?.capitalConfigured
+                        ? 'Configured'
                         : 'Not configured'}
-                    </span>
-                    <span className='text-[10px] uppercase tracking-wide text-muted-foreground'>
-                      Live bridge unavailable
                     </span>
                   </div>
                   <p className='text-sm text-muted-foreground'>
-                    These are separate credentials and are not reused from the
-                    Deriv token. They are saved for testing and setup, but the
-                    MT5 live bridge is intentionally disabled until the real
-                    adapter is connected.
+                    Store Capital API credentials for the direct broker path.
+                    They are encrypted and stored per account.
                   </p>
                   <div className='mt-4 grid gap-3'>
                     <input
-                      type='text'
-                      value={mt5Credentials.login}
+                      type='email'
+                      value={capitalCredentials.identifier}
                       onChange={(e) =>
-                        setMt5Credentials((prev) => ({
+                        setCapitalCredentials((prev) => ({
                           ...prev,
-                          login: e.target.value,
+                          identifier: e.target.value,
                         }))
                       }
-                      placeholder='MT5 login'
+                      placeholder='Capital identifier / email'
                       className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
                     />
                     <input
                       type='password'
-                      value={mt5Credentials.password}
+                      value={capitalCredentials.apiKey}
                       onChange={(e) =>
-                        setMt5Credentials((prev) => ({
+                        setCapitalCredentials((prev) => ({
+                          ...prev,
+                          apiKey: e.target.value,
+                        }))
+                      }
+                      placeholder='Capital API key'
+                      className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
+                    />
+                    <input
+                      type='password'
+                      value={capitalCredentials.password}
+                      onChange={(e) =>
+                        setCapitalCredentials((prev) => ({
                           ...prev,
                           password: e.target.value,
                         }))
                       }
-                      placeholder='MT5 password'
+                      placeholder='Capital password / secret'
                       className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
                     />
-                    <input
-                      type='text'
-                      value={mt5Credentials.server}
+                    <select
+                      value={capitalCredentials.accountType}
                       onChange={(e) =>
-                        setMt5Credentials((prev) => ({
+                        setCapitalCredentials((prev) => ({
                           ...prev,
-                          server: e.target.value,
+                          accountType: e.target.value,
                         }))
                       }
-                      placeholder='MT5 server'
                       className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
-                    />
-                    <input
-                      type='text'
-                      value={mt5Credentials.accountNumber}
-                      onChange={(e) =>
-                        setMt5Credentials((prev) => ({
-                          ...prev,
-                          accountNumber: e.target.value,
-                        }))
-                      }
-                      placeholder='MT5 account number'
-                      className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
-                    />
-                    {tokenStatus?.mt5Configured && (
+                    >
+                      <option value='demo'>Demo</option>
+                      <option value='live'>Live</option>
+                    </select>
+                    {tokenStatus?.capitalConfigured && (
                       <p className='text-xs text-muted-foreground'>
-                        Stored MT5 login: ••••{tokenStatus.mt5LoginLast4}
-                        {tokenStatus.mt5AccountLast4
-                          ? ` • account ••••${tokenStatus.mt5AccountLast4}`
+                        Stored Capital key: ••••{tokenStatus.capitalApiKeyLast4}
+                        {tokenStatus.capitalAccountType
+                          ? ` • ${tokenStatus.capitalAccountType}`
                           : ''}
                       </p>
                     )}
@@ -801,20 +812,21 @@ export function DashboardApp(d: TradingDashboard) {
                 <ButtonPrimary
                   disabled={
                     (!tokenInput &&
-                      !mt5Credentials.login &&
-                      !mt5Credentials.password &&
-                      !mt5Credentials.server &&
-                      !mt5Credentials.accountNumber) ||
+                      !capitalCredentials.apiKey &&
+                      !capitalCredentials.identifier &&
+                      !capitalCredentials.password) ||
                     saveTokenMutation.isPending
                   }
                   onClick={() =>
                     saveTokenMutation.mutate({
                       derivToken: tokenInput.trim() || undefined,
-                      mt5Login: mt5Credentials.login.trim() || undefined,
-                      mt5Password: mt5Credentials.password.trim() || undefined,
-                      mt5Server: mt5Credentials.server.trim() || undefined,
-                      mt5AccountNumber:
-                        mt5Credentials.accountNumber.trim() || undefined,
+                      capitalApiKey:
+                        capitalCredentials.apiKey.trim() || undefined,
+                      capitalIdentifier:
+                        capitalCredentials.identifier.trim() || undefined,
+                      capitalPassword:
+                        capitalCredentials.password.trim() || undefined,
+                      capitalAccountType: capitalCredentials.accountType,
                     })
                   }
                 >
@@ -822,7 +834,8 @@ export function DashboardApp(d: TradingDashboard) {
                 </ButtonPrimary>
                 <ButtonGhost
                   disabled={
-                    (!tokenStatus?.configured && !tokenStatus?.mt5Configured) ||
+                    (!tokenStatus?.configured &&
+                      !tokenStatus?.capitalConfigured) ||
                     deleteTokenMutation.isPending
                   }
                   onClick={() => deleteTokenMutation.mutate()}
@@ -1331,6 +1344,7 @@ function RecentActivityTable({ rows }: { rows: LogEntry[] }) {
         <thead className='text-xs text-muted-foreground'>
           <tr>
             <th className='pb-2 font-medium'>Type</th>
+            <th className='pb-2 font-medium'>Broker</th>
             <th className='pb-2 font-medium'>Time</th>
             <th className='pb-2 font-medium'>Details</th>
           </tr>
@@ -1339,6 +1353,17 @@ function RecentActivityTable({ rows }: { rows: LogEntry[] }) {
           {rows.slice(0, 16).map((row) => (
             <tr key={row._id}>
               <td className='py-2.5'>{row.type}</td>
+              <td className='py-2.5'>
+                <span
+                  className={`rounded px-2 py-1 text-[10px] font-semibold uppercase ${
+                    row.brokerType === 'capital'
+                      ? 'bg-emerald-500/15 text-emerald-300'
+                      : 'bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {row.brokerType === 'capital' ? 'Capital.com' : 'Deriv'}
+                </span>
+              </td>
               <td className='py-2.5 text-muted-foreground'>
                 {formatDate(row.createdAt)}
               </td>

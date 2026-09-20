@@ -9,10 +9,21 @@ export const apiClient = axios.create({
   withCredentials: true,
 });
 
+export class ApiError extends Error {
+  statusCode: number | null;
+
+  constructor(message: string, statusCode?: number | null) {
+    super(message);
+    this.name = 'ApiError';
+    this.statusCode = statusCode ?? null;
+  }
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     const message =
+      error?.response?.data?.details ||
       error?.response?.data?.error ||
       error?.response?.data?.message ||
       error?.message ||
@@ -22,7 +33,9 @@ apiClient.interceptors.response.use(
       console.error('Network error - check API server:', API_BASE_URL);
     }
 
-    return Promise.reject(new Error(message));
+    return Promise.reject(
+      new ApiError(message, error?.response?.status ?? null)
+    );
   }
 );
 
@@ -49,9 +62,10 @@ export interface TokenStatus {
   tokenLast4: string | null;
   createdAt: string | null;
   updatedAt: string | null;
-  mt5Configured: boolean;
-  mt5LoginLast4: string | null;
-  mt5AccountLast4: string | null;
+  capitalConfigured: boolean;
+  capitalApiKeyLast4: string | null;
+  capitalIdentifier: string | null;
+  capitalAccountType: string;
   preferredDerivAccountId?: string | null;
   runtimeConnected?: {
     connected: boolean;
@@ -59,8 +73,7 @@ export interface TokenStatus {
     accountType?: string | null;
   } | null;
   derivConnected: boolean;
-  mt5ReadyForTesting: boolean;
-  mt5LiveBridgeAvailable: boolean;
+  capitalReadyForTesting?: boolean;
   brokerStatus?: {
     deriv: {
       configured: boolean;
@@ -68,10 +81,9 @@ export interface TokenStatus {
       liveBridgeAvailable: boolean;
       readyForTesting: boolean;
     };
-    mt5: {
+    capital: {
       configured: boolean;
       status: 'configured' | 'not_configured';
-      bridgeStatus: 'disabled_until_bridge';
       liveBridgeAvailable: boolean;
       readyForTesting: boolean;
     };
@@ -80,11 +92,19 @@ export interface TokenStatus {
 
 export interface BrokerCredentialPayload {
   derivToken?: string;
-  mt5Login?: string;
-  mt5Password?: string;
-  mt5Server?: string;
-  mt5AccountNumber?: string;
+  capitalApiKey?: string;
+  capitalIdentifier?: string;
+  capitalPassword?: string;
+  capitalAccountType?: string;
   preferredDerivAccountId?: string;
+}
+
+export interface CapitalMarket {
+  epic: string;
+  symbol?: string;
+  instrumentName?: string;
+  instrumentType?: string;
+  marketStatus?: string;
 }
 
 export interface DerivAccountRow {
@@ -124,12 +144,6 @@ export interface HealthResponse {
     totalInstruments: number;
     activeInstruments: number;
     monitoringIntervalMs: number;
-  };
-  mt5Bridge?: {
-    enabled: boolean;
-    liveBridgeAvailable: boolean;
-    status: 'live_ready' | 'disabled_until_bridge';
-    message: string;
   };
 }
 
@@ -201,13 +215,14 @@ export interface AnalyticsSummary {
 
 export type InstrumentRecoveryStrategy = 'fixed_isolated_stake';
 
-export type BrokerType = 'deriv_ws' | 'mt5_prime';
+export type BrokerType = 'deriv_ws' | 'capital';
 export type AssetClassType =
   | 'Synthetic Indices'
   | 'Forex'
   | 'Stocks'
   | 'Commodities'
-  | 'Indices';
+  | 'Indices'
+  | 'Crypto';
 
 export interface InstrumentConfig {
   id?: string;
@@ -248,9 +263,21 @@ export interface InstrumentState {
   symbol: string;
   config: InstrumentConfig;
   signal: InstrumentSignal | null;
+  historyNotice?: {
+    requested: number;
+    received: number;
+    tolerated: boolean;
+    message: string;
+  } | null;
+  historyWarning?: {
+    requested: number;
+    received: number;
+    message: string;
+  } | null;
   openPosition: {
     contract_id: string;
     signal: string;
+    size?: number | null;
     buy_price: number;
     timestamp: string;
     profit?: number | null;
@@ -293,34 +320,44 @@ export const tradingAPI = {
     apiClient.put<{
       success: boolean;
       tokenLast4?: string | null;
-      mt5Configured: boolean;
     }>('/user/token', payload),
   deleteToken: () => apiClient.delete<{ success: boolean }>('/user/token'),
 
   getInstruments: () => apiClient.get<InstrumentConfig[]>('/instruments'),
-  getInstrumentState: (symbol: string) =>
-    apiClient.get<InstrumentState>(`/instruments/${symbol}/state`),
+  getInstrumentState: (symbol: string, brokerType = 'deriv_ws') =>
+    apiClient.get<InstrumentState>(
+      `/instruments/${symbol}/state?brokerType=${encodeURIComponent(brokerType)}`
+    ),
   addInstrument: (config: InstrumentConfig) =>
     apiClient.post<{
       success: boolean;
       message: string;
       instrument: InstrumentConfig;
     }>('/instruments', config),
-  updateInstrument: (symbol: string, updates: Partial<InstrumentConfig>) =>
+  updateInstrument: (
+    symbol: string,
+    updates: Partial<InstrumentConfig>,
+    brokerType = 'deriv_ws'
+  ) =>
     apiClient.put<{
       success: boolean;
       message: string;
       instrument: InstrumentConfig;
-    }>(`/instruments/${symbol}`, updates),
-  removeInstrument: (symbol: string) =>
-    apiClient.delete<ApiMessageResponse>(`/instruments/${symbol}`),
-  toggleInstrument: (symbol: string) =>
-    apiClient.patch<{ success: boolean; message: string; enabled: boolean }>(
-      `/instruments/${symbol}/toggle`
+    }>(
+      `/instruments/${symbol}?brokerType=${encodeURIComponent(brokerType)}`,
+      updates
     ),
-  closeInstrumentPosition: (symbol: string) =>
+  removeInstrument: (symbol: string, brokerType = 'deriv_ws') =>
+    apiClient.delete<ApiMessageResponse>(
+      `/instruments/${symbol}?brokerType=${encodeURIComponent(brokerType)}`
+    ),
+  toggleInstrument: (symbol: string, brokerType = 'deriv_ws') =>
+    apiClient.patch<{ success: boolean; message: string; enabled: boolean }>(
+      `/instruments/${symbol}/toggle?brokerType=${encodeURIComponent(brokerType)}`
+    ),
+  closeInstrumentPosition: (symbol: string, brokerType = 'deriv_ws') =>
     apiClient.post<{ success: boolean; contracts_closed: number }>(
-      `/instruments/${symbol}/close`
+      `/instruments/${symbol}/close?brokerType=${encodeURIComponent(brokerType)}`
     ),
 
   getAdminUsers: () => apiClient.get<AdminUser[]>('/admin/users'),
@@ -337,6 +374,8 @@ export const tradingAPI = {
     }>('/admin/users', payload),
   getDerivAccounts: () =>
     apiClient.get<{ data: DerivAccountRow[] }>('/user/token/accounts'),
+  getCapitalMarkets: () =>
+    apiClient.get<{ markets: CapitalMarket[] }>('/user/capital/markets'),
   resetAdminUserPassword: (userId: string, password: string) =>
     apiClient.patch<{ success: boolean; message: string }>(
       `/admin/users/${userId}/password`,

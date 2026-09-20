@@ -6,7 +6,7 @@ import type {
 
 export const BROKER_OPTIONS = [
   { value: 'deriv_ws', label: 'Deriv Synthetic Engine' },
-  { value: 'mt5_prime', label: 'MetaTrader 5 Direct Bridge' },
+  { value: 'capital', label: 'Capital.com API' },
 ] as const;
 
 export const ASSET_CLASS_OPTIONS = [
@@ -15,7 +15,34 @@ export const ASSET_CLASS_OPTIONS = [
   { value: 'Stocks', label: 'Stocks' },
   { value: 'Commodities', label: 'Commodities' },
   { value: 'Indices', label: 'Indices' },
+  { value: 'Crypto', label: 'Crypto' },
 ] as const;
+
+export const TIMEFRAME_OPTIONS_BY_BROKER = {
+  deriv_ws: [
+    { value: '1m', label: '1m' },
+    { value: '2m', label: '2m' },
+    { value: '3m', label: '3m' },
+    { value: '5m', label: '5m' },
+    { value: '10m', label: '10m' },
+    { value: '15m', label: '15m' },
+    { value: '30m', label: '30m' },
+    { value: '1h', label: '1h' },
+    { value: '2h', label: '2h' },
+    { value: '4h', label: '4h' },
+    { value: '1d', label: '1d' },
+  ],
+  capital: [
+    { value: '1m', label: '1m' },
+    { value: '5m', label: '5m' },
+    { value: '15m', label: '15m' },
+    { value: '30m', label: '30m' },
+    { value: '1h', label: '1h' },
+    { value: '4h', label: '4h' },
+    { value: '1d', label: '1d' },
+    { value: '1w', label: '1w' },
+  ],
+} as const;
 
 export type SymbolCatalog = Record<
   BrokerType,
@@ -36,11 +63,11 @@ export const SYMBOL_OPTIONS_BY_BROKER_AND_CLASS: SymbolCatalog = {
       'BOOM1000',
     ],
   },
-  mt5_prime: {
+  capital: {
     Forex: ['EURUSD', 'GBPUSD', 'USDJPY'],
-    Commodities: ['XAUUSD'],
+    Commodities: ['GOLD'],
     Indices: ['US500'],
-    Stocks: ['AAPL'],
+    Crypto: [],
   },
 };
 
@@ -57,8 +84,6 @@ export const DEFAULT_NEW_INSTRUMENT: InstrumentConfig = {
   multiplier: 100,
   stopLossAmount: 0,
   takeProfitAmount: 0,
-  tradeCooldownSeconds: 120,
-  minEmaSeparationBps: 10,
   enabled: true,
 };
 
@@ -66,19 +91,4 @@ export const CLIENT_DEFAULT_SYMBOLS = ['R_10', 'R_25'] as const;
 
 const DERIV_SYNTHETIC_SYMBOLS =
   SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws['Synthetic Indices'] ?? [];
-const MT5_FOREX_SYMBOLS =
-  SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.mt5_prime.Forex ?? [];
-const MT5_COMMODITY_SYMBOLS =
-  SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.mt5_prime.Commodities ?? [];
-const MT5_INDEX_SYMBOLS =
-  SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.mt5_prime.Indices ?? [];
-const MT5_STOCK_SYMBOLS =
-  SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.mt5_prime.Stocks ?? [];
-
-export const SYMBOL_OPTIONS = [
-  ...DERIV_SYNTHETIC_SYMBOLS,
-  ...MT5_FOREX_SYMBOLS,
-  ...MT5_COMMODITY_SYMBOLS,
-  ...MT5_INDEX_SYMBOLS,
-  ...MT5_STOCK_SYMBOLS,
-] as const;
+export const SYMBOL_OPTIONS = [...DERIV_SYNTHETIC_SYMBOLS] as const;
