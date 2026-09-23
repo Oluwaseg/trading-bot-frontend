@@ -1329,6 +1329,8 @@ function PerInstrumentTable({ rows }: { rows: AnalyticsSummary['bySymbol'] }) {
 }
 
 function RecentActivityTable({ rows }: { rows: LogEntry[] }) {
+  const [selectedRow, setSelectedRow] = useState<LogEntry | null>(null);
+
   if (rows.length === 0) {
     return <p className='text-sm text-muted-foreground'>No recent activity.</p>;
   }
@@ -1362,16 +1364,80 @@ function RecentActivityTable({ rows }: { rows: LogEntry[] }) {
                 {formatDate(row.createdAt)}
               </td>
               <td className='max-w-md py-2.5'>
-                <code className='break-all text-xs text-muted-foreground'>
-                  {JSON.stringify(row).slice(0, 160)}
-                </code>
+                <div className='flex items-center justify-between gap-3'>
+                  <div className='min-w-0 truncate text-xs text-muted-foreground'>
+                    {activitySummary(row)}
+                  </div>
+                  <button
+                    type='button'
+                    onClick={() => setSelectedRow(row)}
+                    className='shrink-0 rounded-md border border-border px-2 py-1 text-xs text-foreground transition hover:bg-muted'
+                  >
+                    View details
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+      {selectedRow && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4'>
+          <div className='flex max-h-[85vh] w-full max-w-3xl flex-col rounded-xl border border-border bg-card shadow-xl'>
+            <div className='flex items-center justify-between border-b border-border px-5 py-4'>
+              <div>
+                <p className='text-xs font-medium uppercase tracking-wide text-muted-foreground'>
+                  Activity details
+                </p>
+                <h3 className='mt-1 text-base font-semibold text-foreground'>
+                  {selectedRow.type} ·{' '}
+                  {selectedRow.brokerType === 'capital' ? 'Capital' : 'Deriv'}
+                </h3>
+              </div>
+              <button
+                type='button'
+                onClick={() => setSelectedRow(null)}
+                className='rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground'
+              >
+                Close
+              </button>
+            </div>
+            <div className='grid gap-3 overflow-auto p-5'>
+              <div className='grid gap-2 sm:grid-cols-3'>
+                <MiniStat
+                  label='Broker'
+                  value={
+                    selectedRow.brokerType === 'capital' ? 'Capital' : 'Deriv'
+                  }
+                />
+                <MiniStat label='Type' value={selectedRow.type} />
+                <MiniStat
+                  label='Time'
+                  value={formatDate(selectedRow.createdAt)}
+                />
+              </div>
+              <pre className='overflow-auto rounded-lg border border-border bg-background p-4 text-xs leading-5 text-foreground'>
+                {JSON.stringify(selectedRow, null, 2)}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function activitySummary(row: LogEntry) {
+  const details = [
+    row.symbol,
+    typeof row.signal === 'string' ? row.signal : null,
+    typeof row.event === 'string' ? row.event : null,
+    typeof row.message === 'string' ? row.message : null,
+    typeof row.contract_id === 'string' ? `Contract ${row.contract_id}` : null,
+  ].filter(Boolean);
+  return details.length > 0
+    ? details.join(' · ')
+    : 'Open details to inspect this event';
 }
 
 function AdminUserRow({
