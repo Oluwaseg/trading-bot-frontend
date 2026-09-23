@@ -161,9 +161,21 @@ export interface LogSummary {
   totalSells: number;
   openTrades: number;
   latestBalance: number | null;
+  byBroker?: Partial<
+    Record<
+      BrokerType,
+      {
+        totalTrades: number;
+        totalBuys: number;
+        totalSells: number;
+        openTrades: number;
+      }
+    >
+  >;
 }
 
 export interface TradeCloseAnalyticsRow {
+  brokerType: BrokerType;
   symbol: string | null;
   contract_id: string | null;
   buy_price: number | null;
@@ -173,6 +185,7 @@ export interface TradeCloseAnalyticsRow {
 }
 
 export interface AnalyticsBySymbolRow {
+  brokerType: BrokerType;
   symbol: string | null;
   closedTrades: number;
   wins: number;
@@ -209,6 +222,18 @@ export interface AnalyticsSummary {
   grossLoss: number;
   winRate: number;
   profitFactor: number | null;
+  byBroker: Array<{
+    brokerType: BrokerType;
+    closedTrades: number;
+    wins: number;
+    losses: number;
+    breakeven: number;
+    netProfit: number;
+    grossProfit: number;
+    grossLoss: number;
+    winRate: number;
+    profitFactor: number | null;
+  }>;
   bySymbol: AnalyticsBySymbolRow[];
   latest: TradeCloseAnalyticsRow[];
 }
@@ -254,6 +279,8 @@ export interface InstrumentSignal {
   symbol: string;
   shortEma: number;
   longEma: number;
+  emaGapBps?: number;
+  crossoverDetected?: boolean;
   signal: 'BUY' | 'SELL' | 'NEUTRAL';
   state: 'BULLISH' | 'BEARISH';
   timestamp: string;

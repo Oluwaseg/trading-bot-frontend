@@ -61,7 +61,6 @@ export function DashboardApp(d: TradingDashboard) {
     newInstrument,
     setNewInstrument,
     addInstrumentMutation,
-    addDefaultsMutation,
     updateInstrumentMutation,
     toggleInstrumentMutation,
     closePositionMutation,
@@ -70,7 +69,6 @@ export function DashboardApp(d: TradingDashboard) {
     logSummary,
     logs,
     activeInstrumentCount,
-    openPositionCount,
     userCount,
     createUserForm,
     setCreateUserForm,
@@ -87,6 +85,15 @@ export function DashboardApp(d: TradingDashboard) {
     closePositionMutation.isPending ||
     removeInstrumentMutation.isPending;
 
+  const capitalOpenPositionCount = instrumentStates.filter(
+    (instrument) =>
+      instrument.config.brokerType === 'capital' && !!instrument.openPosition
+  ).length;
+  const derivOpenPositionCount = instrumentStates.filter(
+    (instrument) =>
+      (instrument.config.brokerType ?? 'deriv_ws') !== 'capital' &&
+      !!instrument.openPosition
+  ).length;
   const preferredDerivAccountId = tokenStatus?.preferredDerivAccountId ?? null;
   const connectedDerivAccountId =
     tokenStatus?.runtimeConnected?.accountId ?? null;
@@ -154,7 +161,7 @@ export function DashboardApp(d: TradingDashboard) {
             active={section === 'token'}
             onClick={() => setSection('token')}
           >
-            Token
+            Connection / Token
           </NavItem>
           <NavItem
             active={section === 'performance'}
@@ -231,7 +238,7 @@ export function DashboardApp(d: TradingDashboard) {
             {(
               [
                 ['overview', 'Overview'],
-                ['token', 'Token'],
+                ['token', 'Connection / Token'],
                 ['performance', 'Stats'],
                 ['activity', 'Logs'],
                 ...(isAdmin ? [['admin', 'Admin']] : []),
@@ -273,111 +280,20 @@ export function DashboardApp(d: TradingDashboard) {
                     hint='Automation enabled'
                   />
                   <Kpi
-                    label='Open positions'
-                    value={openPositionCount}
-                    hint='From Deriv portfolio'
+                    label='Capital open positions'
+                    value={capitalOpenPositionCount}
+                    hint='Capital portfolio'
                   />
                   <Kpi
-                    label='Net P/L'
+                    label='Deriv open positions'
+                    value={derivOpenPositionCount}
+                    hint='Deriv portfolio'
+                  />
+                  <Kpi
+                    label='Net P/L (all brokers)'
                     value={analytics ? formatMoney(analytics.netProfit) : '—'}
                     hint='Closed trades'
                   />
-                </div>
-
-                <Panel title='Connection & account'>
-                  <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
-                    <MiniStat
-                      label='MongoDB'
-                      value={health?.mongo.connected ? 'OK' : 'Down'}
-                    />
-                    <MiniStat
-                      label='Token'
-                      value={
-                        tokenStatus?.configured
-                          ? `Deriv ••••${tokenStatus.tokenLast4}`
-                          : 'Not set'
-                      }
-                    />
-                    <MiniStat
-                      label='Trades (log)'
-                      value={String(logSummary?.totalTrades ?? 0)}
-                    />
-                    <MiniStat
-                      label='Win rate'
-                      value={
-                        analytics
-                          ? `${(analytics.winRate * 100).toFixed(1)}%`
-                          : '—'
-                      }
-                    />
-                    <MiniStat
-                      label='Open (log)'
-                      value={String(logSummary?.openTrades ?? 0)}
-                    />
-                  </div>
-
-                  <div className='mt-4 rounded-xl border border-border bg-background/50 p-4'>
-                    <div className='flex flex-wrap items-center justify-between gap-3'>
-                      <div>
-                        <p className='text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground'>
-                          Deriv selection
-                        </p>
-                        <p className='mt-1 text-sm text-foreground'>
-                          {derivAccountStatusText}
-                        </p>
-                      </div>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
-                          connectedDerivAccountId === preferredDerivAccountId &&
-                          preferredDerivAccountId
-                            ? 'bg-emerald-500/10 text-emerald-300'
-                            : 'bg-amber-500/10 text-amber-300'
-                        }`}
-                      >
-                        {preferredDerivAccountId
-                          ? connectedDerivAccountId === preferredDerivAccountId
-                            ? 'Match'
-                            : 'Waiting'
-                          : 'No selection'}
-                      </span>
-                    </div>
-
-                    <div className='mt-3 grid gap-3 sm:grid-cols-2'>
-                      <div className='rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3'>
-                        <p className='text-[10px] uppercase tracking-[0.12em] text-emerald-300/80'>
-                          Selected
-                        </p>
-                        <p className='mt-1 text-base font-semibold text-emerald-200'>
-                          {preferredDerivAccountId ?? 'Not selected'}
-                        </p>
-                      </div>
-                      <div className='rounded-lg border border-amber-500/20 bg-amber-500/5 p-3'>
-                        <p className='text-[10px] uppercase tracking-[0.12em] text-amber-300/80'>
-                          Connected
-                        </p>
-                        <p className='mt-1 text-base font-semibold text-amber-200'>
-                          {connectedDerivAccountId ?? 'Not connected'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </Panel>
-
-                <div className='mt-4'>
-                  <button
-                    type='button'
-                    onClick={async () => {
-                      try {
-                        await fetchDerivAccounts();
-                        setShowDerivAccountsModal(true);
-                      } catch (e) {
-                        // ignore
-                      }
-                    }}
-                    className='rounded-md border px-3 py-2 text-sm'
-                  >
-                    Check accounts
-                  </button>
                 </div>
 
                 <Panel
@@ -390,15 +306,6 @@ export function DashboardApp(d: TradingDashboard) {
                       >
                         {showAddInstrument ? 'Hide form' : 'Add instrument'}
                       </ButtonPrimary>
-                      <ButtonGhost
-                        className='px-3 py-2 text-xs'
-                        disabled={addDefaultsMutation.isPending}
-                        onClick={() => addDefaultsMutation.mutate()}
-                      >
-                        {addDefaultsMutation.isPending
-                          ? 'Adding…'
-                          : 'Add defaults'}
-                      </ButtonGhost>
                     </div>
                   }
                 >
@@ -897,7 +804,7 @@ export function DashboardApp(d: TradingDashboard) {
 
             {/* Accounts modal (simple) */}
             {/* keep modal next to overview for visibility */}
-            {section === 'overview' && showDerivAccountsModal && (
+            {section === 'token' && showDerivAccountsModal && (
               <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50'>
                 <div className='w-full max-w-2xl rounded-lg bg-card p-6'>
                   <div className='flex items-center justify-between'>
@@ -1197,10 +1104,23 @@ function AnalyticsPanel({
   logSummary?: LogSummary;
 }) {
   const ls = logSummary;
+  const capitalLog = ls?.byBroker?.capital;
+  const derivLog = ls?.byBroker?.deriv_ws;
   return (
     <div className='grid gap-2 sm:grid-cols-2 lg:grid-cols-3'>
-      <MiniStat label='Total trades' value={String(ls?.totalTrades ?? 0)} />
-      <MiniStat label='Open trades' value={String(ls?.openTrades ?? 0)} />
+      <MiniStat
+        label='Capital trades'
+        value={String(capitalLog?.totalTrades ?? 0)}
+      />
+      <MiniStat
+        label='Deriv trades'
+        value={String(derivLog?.totalTrades ?? 0)}
+      />
+      <MiniStat
+        label='Capital open'
+        value={String(capitalLog?.openTrades ?? 0)}
+      />
+      <MiniStat label='Deriv open' value={String(derivLog?.openTrades ?? 0)} />
       <MiniStat
         label='Profit factor'
         value={
@@ -1221,6 +1141,32 @@ function AnalyticsPanel({
         label='Gross loss'
         value={analytics ? formatMoney(analytics.grossLoss) : '—'}
       />
+      {(['deriv_ws', 'capital'] as const).map((brokerType) => {
+        const broker = analytics?.byBroker?.find(
+          (row) => row.brokerType === brokerType
+        );
+        const label = brokerType === 'capital' ? 'Capital' : 'Deriv';
+        return (
+          <div
+            key={brokerType}
+            className='rounded-lg border border-border bg-background/40 p-3 lg:col-span-1'
+          >
+            <p className='text-xs font-medium uppercase tracking-wide text-muted-foreground'>
+              {label} analytics
+            </p>
+            <div className='mt-2 grid grid-cols-2 gap-2'>
+              <MiniStat
+                label='Net P/L'
+                value={broker ? formatMoney(broker.netProfit) : '—'}
+              />
+              <MiniStat
+                label='Win rate'
+                value={broker ? `${(broker.winRate * 100).toFixed(1)}%` : '—'}
+              />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1249,6 +1195,7 @@ function LatestTradesTable({
         <table className='w-full text-left text-sm'>
           <thead className='text-xs text-muted-foreground'>
             <tr>
+              <th className='pb-2 font-medium'>Broker</th>
               <th className='pb-2 font-medium'>Symbol</th>
               <th className='pb-2 font-medium'>Date</th>
               <th className='pb-2 font-medium'>Contract</th>
@@ -1260,6 +1207,9 @@ function LatestTradesTable({
           <tbody className='divide-y divide-border'>
             {rows.map((row) => (
               <tr key={`${row.contract_id ?? 'na'}-${row.createdAt}`}>
+                <td className='py-2.5'>
+                  {row.brokerType === 'capital' ? 'Capital' : 'Deriv'}
+                </td>
                 <td className='py-2.5'>{row.symbol ?? '—'}</td>
                 <td className='py-2.5 text-xs text-muted-foreground'>
                   {formatDate(row.createdAt)}
@@ -1321,6 +1271,7 @@ function PerInstrumentTable({ rows }: { rows: AnalyticsSummary['bySymbol'] }) {
       <table className='w-full text-left text-sm'>
         <thead className='text-xs text-muted-foreground'>
           <tr>
+            <th className='pb-2 font-medium'>Broker</th>
             <th className='pb-2 font-medium'>Symbol</th>
             <th className='pb-2 text-right font-medium'>Closed</th>
             <th className='pb-2 text-right font-medium'>Win rate</th>
@@ -1332,7 +1283,10 @@ function PerInstrumentTable({ rows }: { rows: AnalyticsSummary['bySymbol'] }) {
         </thead>
         <tbody className='divide-y divide-border'>
           {rows.map((r) => (
-            <tr key={String(r.symbol)}>
+            <tr key={`${r.brokerType}:${String(r.symbol)}`}>
+              <td className='py-2.5'>
+                {r.brokerType === 'capital' ? 'Capital' : 'Deriv'}
+              </td>
               <td className='py-2.5'>{r.symbol ?? '—'}</td>
               <td className='py-2.5 text-right tabular-nums'>
                 {String(r.closedTrades ?? 0)}

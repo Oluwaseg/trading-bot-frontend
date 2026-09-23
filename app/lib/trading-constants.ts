@@ -87,8 +87,6 @@ export const DEFAULT_NEW_INSTRUMENT: InstrumentConfig = {
   enabled: true,
 };
 
-export const CLIENT_DEFAULT_SYMBOLS = ['R_10', 'R_25'] as const;
-
 const DERIV_SYNTHETIC_SYMBOLS =
   SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws['Synthetic Indices'] ?? [];
 export const SYMBOL_OPTIONS = [...DERIV_SYNTHETIC_SYMBOLS] as const;

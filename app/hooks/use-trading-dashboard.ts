@@ -14,10 +14,7 @@ import {
   type TokenStatus,
 } from '../api-client';
 import { extractErrorMessage } from '../lib/format';
-import {
-  CLIENT_DEFAULT_SYMBOLS,
-  DEFAULT_NEW_INSTRUMENT,
-} from '../lib/trading-constants';
+import { DEFAULT_NEW_INSTRUMENT } from '../lib/trading-constants';
 
 export type LoginForm = {
   email: string;
@@ -347,39 +344,6 @@ function useTradingDashboardInternal() {
     onError: (error) => setGlobalError(extractErrorMessage(error)),
   });
 
-  const addDefaultsMutation = useMutation({
-    mutationFn: async () => {
-      const results = await Promise.allSettled(
-        CLIENT_DEFAULT_SYMBOLS.map((symbol) =>
-          tradingAPI.addInstrument({ ...DEFAULT_NEW_INSTRUMENT, symbol })
-        )
-      );
-
-      const failed = results.filter((result) => result.status === 'rejected');
-      if (failed.length > 0) {
-        throw new Error('Some default instruments could not be added');
-      }
-    },
-    onSuccess: async () => {
-      setGlobalError(null);
-      setGlobalSuccess('Default instruments added successfully');
-      setTimeout(() => setGlobalSuccess(null), 3000);
-      await queryClient.invalidateQueries({
-        queryKey: ['dashboard', 'instruments'],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ['dashboard', 'instrument-state'],
-      });
-      await queryClient.refetchQueries({
-        queryKey: ['dashboard', 'instruments'],
-      });
-      await queryClient.refetchQueries({
-        queryKey: ['dashboard', 'instrument-state'],
-      });
-    },
-    onError: (error) => setGlobalError(extractErrorMessage(error)),
-  });
-
   const updateInstrumentMutation = useMutation({
     mutationFn: async ({
       symbol,
@@ -631,7 +595,6 @@ function useTradingDashboardInternal() {
     saveTokenMutation,
     deleteTokenMutation,
     addInstrumentMutation,
-    addDefaultsMutation,
     updateInstrumentMutation,
     toggleInstrumentMutation,
     closePositionMutation,
