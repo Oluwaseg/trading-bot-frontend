@@ -175,8 +175,12 @@ function InstrumentRow({
   const strategyBadgeClass = 'bg-slate-500/15 text-slate-200';
   const editBroker =
     draft.brokerType ?? instrument.config.brokerType ?? 'deriv_ws';
-  const editAsset =
+  const requestedEditAsset =
     draft.assetClass ?? instrument.config.assetClass ?? 'Synthetic Indices';
+  const editAsset =
+    editBroker === 'capital' && requestedEditAsset === 'Synthetic Indices'
+      ? 'Forex'
+      : requestedEditAsset;
   const capitalSymbols = capitalMarkets
     .filter((market) => {
       const type = String(market.instrumentType || '').toUpperCase();
@@ -192,6 +196,14 @@ function InstrumentRow({
     editBroker === 'capital'
       ? capitalSymbols
       : (SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[editBroker]?.[editAsset] ?? []);
+  const editAssetOptions =
+    editBroker === 'capital'
+      ? ASSET_CLASS_OPTIONS.filter(
+          (option) => option.value !== 'Synthetic Indices'
+        )
+      : ASSET_CLASS_OPTIONS.filter(
+          (option) => option.value === 'Synthetic Indices'
+        );
 
   return (
     <div
@@ -457,7 +469,7 @@ function InstrumentRow({
                   symbol: nextSymbols[0] ?? prev.symbol,
                 }));
               }}
-              options={ASSET_CLASS_OPTIONS.map((asset) => ({
+              options={editAssetOptions.map((asset) => ({
                 value: asset.value,
                 label: asset.label,
               }))}

@@ -104,9 +104,13 @@ export function DashboardApp(d: TradingDashboard) {
       : 'Selected account pending reconnect';
 
   const newInstrumentBroker = newInstrument.brokerType ?? 'deriv_ws';
+  const requestedNewAssetClass = newInstrument.assetClass;
   const newInstrumentAssetClass =
-    newInstrument.assetClass ??
-    (newInstrumentBroker === 'capital' ? 'Forex' : 'Synthetic Indices');
+    newInstrumentBroker === 'capital' &&
+    requestedNewAssetClass === 'Synthetic Indices'
+      ? 'Forex'
+      : (requestedNewAssetClass ??
+        (newInstrumentBroker === 'capital' ? 'Forex' : 'Synthetic Indices'));
   const capitalSymbols = capitalMarkets
     .filter((market) => {
       const type = String(market.instrumentType || '').toUpperCase();
@@ -132,6 +136,14 @@ export function DashboardApp(d: TradingDashboard) {
       : (SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[newInstrumentBroker]?.[
           newInstrumentAssetClass
         ] ?? defaultInstrumentSymbols);
+  const newInstrumentAssetOptions =
+    newInstrumentBroker === 'capital'
+      ? ASSET_CLASS_OPTIONS.filter(
+          (option) => option.value !== 'Synthetic Indices'
+        )
+      : ASSET_CLASS_OPTIONS.filter(
+          (option) => option.value === 'Synthetic Indices'
+        );
 
   return (
     <div className='flex min-h-screen bg-background text-foreground'>
@@ -404,7 +416,7 @@ export function DashboardApp(d: TradingDashboard) {
                             symbol: symbols[0] ?? prev.symbol,
                           }));
                         }}
-                        options={ASSET_CLASS_OPTIONS.map((a) => ({
+                        options={newInstrumentAssetOptions.map((a) => ({
                           value: a.value,
                           label: a.label,
                         }))}
