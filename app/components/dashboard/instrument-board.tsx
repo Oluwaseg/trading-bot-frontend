@@ -29,6 +29,8 @@ export function InstrumentBoard({
   onClose,
   onRemove,
   onUpdateInstrument,
+  onGenerateWebhook,
+  generatingWebhook,
   updatePendingSymbol,
   capitalMarkets,
 }: {
@@ -47,6 +49,8 @@ export function InstrumentBoard({
     symbol: string,
     updates: Partial<InstrumentConfig>
   ) => Promise<void>;
+  onGenerateWebhook: (instrumentId: string) => void;
+  generatingWebhook: boolean;
   updatePendingSymbol: string | null;
   capitalMarkets: CapitalMarket[];
 }) {
@@ -76,6 +80,10 @@ export function InstrumentBoard({
           onSaveEdit={(updates) =>
             onUpdateInstrument(instrument.symbol, updates)
           }
+          onGenerateWebhook={() =>
+            onGenerateWebhook(instrument.config.id || '')
+          }
+          generatingWebhook={generatingWebhook}
           capitalMarkets={capitalMarkets}
         />
       ))}
@@ -95,6 +103,8 @@ function InstrumentRow({
   onClose,
   onRemove,
   onSaveEdit,
+  onGenerateWebhook,
+  generatingWebhook,
   capitalMarkets,
 }: {
   instrument: InstrumentState;
@@ -108,6 +118,8 @@ function InstrumentRow({
   onClose: () => void;
   onRemove: () => void;
   onSaveEdit: (updates: Partial<InstrumentConfig>) => Promise<void>;
+  onGenerateWebhook: () => void;
+  generatingWebhook: boolean;
   capitalMarkets: CapitalMarket[];
 }) {
   const [editing, setEditing] = useState(false);
@@ -119,15 +131,27 @@ function InstrumentRow({
       brokerType: c.brokerType ?? 'deriv_ws',
       assetClass: c.assetClass ?? 'Synthetic Indices',
       symbol: c.symbol,
+      mt5AccountId: c.mt5AccountId ?? null,
       shortEmaPeriod: c.shortEmaPeriod,
       longEmaPeriod: c.longEmaPeriod,
       timeFrame: c.timeFrame,
       historyDepth: c.historyDepth,
       positionSize: c.positionSize,
       strategy: c.strategy ?? 'fixed_isolated_stake',
+      recoverySizePerCurrency:
+        c.recoverySizePerCurrency ?? (c.brokerType === 'deriv_ws' ? 1 : 0),
+      maxRecoverySize:
+        c.maxRecoverySize ??
+        (c.brokerType === 'deriv_ws'
+          ? Math.max(35, c.positionSize)
+          : c.positionSize),
       multiplier: c.multiplier,
       stopLossAmount: c.stopLossAmount ?? 0,
-      takeProfitAmount: c.takeProfitAmount ?? 0,
+      takeProfitAmount: 0,
+      trailingStopActivationAmount: c.trailingStopActivationAmount ?? 0,
+      trailingStopDistanceAmount: c.trailingStopDistanceAmount ?? 0,
+      trailingProfitActivationAmount: c.trailingProfitActivationAmount ?? 0,
+      trailingProfitGivebackAmount: c.trailingProfitGivebackAmount ?? 0,
     });
     setEditing(true);
   };
@@ -143,15 +167,30 @@ function InstrumentRow({
         brokerType: draft.brokerType,
         assetClass: draft.assetClass,
         symbol: draft.symbol,
+        mt5AccountId:
+          draft.mt5AccountId ?? instrument.config.mt5AccountId ?? null,
         shortEmaPeriod: draft.shortEmaPeriod,
         longEmaPeriod: draft.longEmaPeriod,
         timeFrame: draft.timeFrame,
         historyDepth: draft.historyDepth,
         positionSize: draft.positionSize,
-        strategy: 'fixed_isolated_stake',
+        strategy: draft.strategy ?? 'fixed_isolated_stake',
+        recoverySizePerCurrency:
+          draft.recoverySizePerCurrency ??
+          (draft.brokerType === 'deriv_ws' ? 1 : 0),
+        maxRecoverySize:
+          draft.maxRecoverySize ??
+          (draft.brokerType === 'deriv_ws'
+            ? Math.max(35, Number(draft.positionSize ?? 10))
+            : draft.positionSize),
         multiplier: draft.multiplier,
         stopLossAmount: draft.stopLossAmount,
-        takeProfitAmount: draft.takeProfitAmount,
+        takeProfitAmount: 0,
+        trailingStopActivationAmount: draft.trailingStopActivationAmount ?? 0,
+        trailingStopDistanceAmount: draft.trailingStopDistanceAmount ?? 0,
+        trailingProfitActivationAmount:
+          draft.trailingProfitActivationAmount ?? 0,
+        trailingProfitGivebackAmount: draft.trailingProfitGivebackAmount ?? 0,
       });
       setEditing(false);
       setDraft({});
@@ -170,7 +209,12 @@ function InstrumentRow({
     instrument.config.brokerType === 'capital' &&
     (errorStatusCode === 423 ||
       /market .*closed|trading hours/i.test(errorMessage || ''));
-  const strategyLabel = 'Fixed Stake';
+  const strategyLabel =
+    instrument.config.strategy === 'fixed_isolated_stake'
+      ? 'Fixed Stake'
+      : instrument.config.strategy === 'aggressive_single_loss_multiplier'
+        ? 'Aggressive Recovery'
+        : 'Standard Deficit';
 
   const strategyBadgeClass = 'bg-slate-500/15 text-slate-200';
   const editBroker =
@@ -178,7 +222,8 @@ function InstrumentRow({
   const requestedEditAsset =
     draft.assetClass ?? instrument.config.assetClass ?? 'Synthetic Indices';
   const editAsset =
-    editBroker === 'capital' && requestedEditAsset === 'Synthetic Indices'
+    (editBroker === 'capital' || editBroker === 'mt5') &&
+    requestedEditAsset === 'Synthetic Indices'
       ? 'Forex'
       : requestedEditAsset;
   const capitalSymbols = capitalMarkets
@@ -197,7 +242,7 @@ function InstrumentRow({
       ? capitalSymbols
       : (SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[editBroker]?.[editAsset] ?? []);
   const editAssetOptions =
-    editBroker === 'capital'
+    editBroker === 'capital' || editBroker === 'mt5'
       ? ASSET_CLASS_OPTIONS.filter(
           (option) => option.value !== 'Synthetic Indices'
         )
@@ -281,12 +326,18 @@ function InstrumentRow({
             <MiniStat label='Signal' value={signal} />
             <MiniStat
               label={
-                instrument.config.brokerType === 'capital' ? 'Size' : 'Stake'
+                instrument.config.brokerType === 'capital'
+                  ? 'Size'
+                  : instrument.config.brokerType === 'mt5'
+                    ? 'Volume'
+                    : 'Stake'
               }
               value={
                 instrument.config.brokerType === 'capital'
                   ? `${instrument.config.positionSize} units`
-                  : `$${instrument.config.positionSize}`
+                  : instrument.config.brokerType === 'mt5'
+                    ? `${instrument.config.positionSize} lots`
+                    : `$${instrument.config.positionSize}`
               }
             />
             <MiniStat
@@ -309,8 +360,8 @@ function InstrumentRow({
               />
             )}
             <MiniStat
-              label='SL / TP'
-              value={`${instrument.config.stopLossAmount ?? '—'} / ${instrument.config.takeProfitAmount ?? '—'}`}
+              label='Risk settings'
+              value={`${instrument.config.stopLossAmount ?? 0} / ${instrument.config.trailingStopDistanceAmount ?? 0} / ${instrument.config.trailingProfitGivebackAmount ?? 0}`}
             />
           </div>
 
@@ -333,12 +384,14 @@ function InstrumentRow({
                     </span>
                   </div>
                   <p className='mt-1 text-xs text-muted-foreground'>
-                    TP{' '}
-                    {open.takeProfitAmount
-                      ? `$${open.takeProfitAmount}`
-                      : 'off'}{' '}
-                    · SL{' '}
-                    {open.stopLossAmount ? `$${open.stopLossAmount}` : 'off'}
+                    Loss limit {instrument.config.stopLossAmount || 'off'} ·
+                    Trail SL{' '}
+                    {instrument.config.trailingStopDistanceAmount || 'off'} ·
+                    Trail TP activation{' '}
+                    {instrument.config.trailingProfitActivationAmount || 'off'}
+                    {instrument.config.trailingProfitGivebackAmount
+                      ? ` · giveback ${instrument.config.trailingProfitGivebackAmount}`
+                      : ''}
                     {open.profit != null
                       ? ` · P/L ${open.profit >= 0 ? '+' : ''}${Number(open.profit).toFixed(2)}`
                       : ''}
@@ -369,6 +422,16 @@ function InstrumentRow({
           >
             {instrument.config.enabled ? 'Pause' : 'Resume'}
           </ButtonGhost>
+          {instrument.config.signalSource === 'tradingview' &&
+          instrument.config.id ? (
+            <ButtonGhost
+              className='lg:min-w-[7rem]'
+              disabled={generatingWebhook}
+              onClick={onGenerateWebhook}
+            >
+              {generatingWebhook ? 'Generating…' : 'Webhook URL'}
+            </ButtonGhost>
+          ) : null}
           <ButtonGhost
             className='lg:min-w-[7rem]'
             disabled={busy || updatePending || editing}
@@ -403,9 +466,13 @@ function InstrumentRow({
               label='Broker'
               value={editBroker}
               onChange={(value) => {
-                const nextBroker = value as 'deriv_ws' | 'capital';
+                const nextBroker = value as NonNullable<
+                  InstrumentConfig['brokerType']
+                >;
                 const nextAsset =
-                  nextBroker === 'capital' ? 'Forex' : 'Synthetic Indices';
+                  nextBroker === 'capital' || nextBroker === 'mt5'
+                    ? 'Forex'
+                    : 'Synthetic Indices';
                 const nextTimeFrame =
                   TIMEFRAME_OPTIONS_BY_BROKER[nextBroker][0].value;
                 const nextSymbols =
@@ -418,8 +485,8 @@ function InstrumentRow({
                             ).toUpperCase() === 'CURRENCIES'
                         )
                         .map((market) => market.epic)
-                    : (SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws[
-                        'Synthetic Indices'
+                    : (SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[nextBroker]?.[
+                        nextAsset
                       ] ?? []);
                 setDraft((prev) => ({
                   ...prev,
@@ -427,6 +494,19 @@ function InstrumentRow({
                   assetClass: nextAsset,
                   symbol: nextSymbols[0] ?? prev.symbol,
                   timeFrame: nextTimeFrame,
+                  positionSize:
+                    nextBroker === 'capital'
+                      ? 100
+                      : nextBroker === 'mt5'
+                        ? 0.01
+                        : 10,
+                  recoverySizePerCurrency: nextBroker === 'deriv_ws' ? 1 : 0,
+                  maxRecoverySize:
+                    nextBroker === 'deriv_ws'
+                      ? 35
+                      : nextBroker === 'capital'
+                        ? 100
+                        : 0.01,
                 }));
               }}
               options={BROKER_OPTIONS.map((broker) => ({
@@ -527,7 +607,9 @@ function InstrumentRow({
               label={
                 instrument.config.brokerType === 'capital'
                   ? 'Size (units)'
-                  : 'Stake'
+                  : editBroker === 'mt5'
+                    ? 'Volume (lots)'
+                    : 'Stake'
               }
               value={draft.positionSize ?? 10}
               onChange={(value) =>
@@ -540,7 +622,7 @@ function InstrumentRow({
               onChange={(value) =>
                 setDraft((prev) => ({
                   ...prev,
-                  strategy: value as 'fixed_isolated_stake',
+                  strategy: value as NonNullable<InstrumentConfig['strategy']>,
                 }))
               }
               options={[
@@ -548,9 +630,38 @@ function InstrumentRow({
                   value: 'fixed_isolated_stake',
                   label: 'Fixed Stake',
                 },
+                {
+                  value: 'standard_accumulative_deficit',
+                  label: 'Standard Accumulative Deficit',
+                },
+                {
+                  value: 'aggressive_single_loss_multiplier',
+                  label: 'Aggressive Recovery',
+                },
               ]}
             />
-            {instrument.config.brokerType !== 'capital' ? (
+            {draft.strategy !== 'fixed_isolated_stake' ? (
+              <>
+                <NumberField
+                  label='Native size per 1 account-currency loss'
+                  value={draft.recoverySizePerCurrency ?? 0}
+                  onChange={(value) =>
+                    setDraft((prev) => ({
+                      ...prev,
+                      recoverySizePerCurrency: value,
+                    }))
+                  }
+                />
+                <NumberField
+                  label='Maximum native size'
+                  value={draft.maxRecoverySize ?? draft.positionSize ?? 10}
+                  onChange={(value) =>
+                    setDraft((prev) => ({ ...prev, maxRecoverySize: value }))
+                  }
+                />
+              </>
+            ) : null}
+            {editBroker !== 'capital' ? (
               <NumberField
                 label='Multiplier'
                 value={draft.multiplier ?? 100}
@@ -560,17 +671,50 @@ function InstrumentRow({
               />
             ) : null}
             <NumberField
-              label='Stop loss USD (0=off)'
+              label='Hard loss limit (account currency, 0=off)'
               value={draft.stopLossAmount ?? 0}
               onChange={(value) =>
                 setDraft((prev) => ({ ...prev, stopLossAmount: value }))
               }
             />
             <NumberField
-              label='Take profit USD (0=off)'
-              value={draft.takeProfitAmount ?? 0}
+              label='Trailing stop activation (account currency, 0=from entry)'
+              value={draft.trailingStopActivationAmount ?? 0}
               onChange={(value) =>
-                setDraft((prev) => ({ ...prev, takeProfitAmount: value }))
+                setDraft((prev) => ({
+                  ...prev,
+                  trailingStopActivationAmount: value,
+                }))
+              }
+            />
+            <NumberField
+              label='Trailing stop distance (0=off)'
+              value={draft.trailingStopDistanceAmount ?? 0}
+              onChange={(value) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  trailingStopDistanceAmount: value,
+                }))
+              }
+            />
+            <NumberField
+              label='Trailing profit activation (account currency, 0=off)'
+              value={draft.trailingProfitActivationAmount ?? 0}
+              onChange={(value) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  trailingProfitActivationAmount: value,
+                }))
+              }
+            />
+            <NumberField
+              label='Trailing take-profit giveback (account currency, 0=off)'
+              value={draft.trailingProfitGivebackAmount ?? 0}
+              onChange={(value) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  trailingProfitGivebackAmount: value,
+                }))
               }
             />
           </div>

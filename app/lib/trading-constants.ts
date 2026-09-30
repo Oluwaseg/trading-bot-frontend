@@ -7,6 +7,7 @@ import type {
 export const BROKER_OPTIONS = [
   { value: 'deriv_ws', label: 'Deriv Synthetic Engine' },
   { value: 'capital', label: 'Capital.com API' },
+  { value: 'mt5', label: 'MT5 account' },
 ] as const;
 
 export const ASSET_CLASS_OPTIONS = [
@@ -42,6 +43,15 @@ export const TIMEFRAME_OPTIONS_BY_BROKER = {
     { value: '1d', label: '1d' },
     { value: '1w', label: '1w' },
   ],
+  mt5: [
+    { value: '1m', label: '1m' },
+    { value: '5m', label: '5m' },
+    { value: '15m', label: '15m' },
+    { value: '30m', label: '30m' },
+    { value: '1h', label: '1h' },
+    { value: '4h', label: '4h' },
+    { value: '1d', label: '1d' },
+  ],
 } as const;
 
 export type SymbolCatalog = Record<
@@ -69,6 +79,12 @@ export const SYMBOL_OPTIONS_BY_BROKER_AND_CLASS: SymbolCatalog = {
     Indices: ['US500'],
     Crypto: [],
   },
+  mt5: {
+    Forex: ['EURUSD', 'GBPUSD', 'USDJPY'],
+    Commodities: ['GOLD'],
+    Indices: ['US500'],
+    Crypto: [],
+  },
 };
 
 export const DEFAULT_NEW_INSTRUMENT: InstrumentConfig = {
@@ -81,9 +97,15 @@ export const DEFAULT_NEW_INSTRUMENT: InstrumentConfig = {
   historyDepth: 500,
   positionSize: 10,
   strategy: 'fixed_isolated_stake',
+  recoverySizePerCurrency: 1,
+  maxRecoverySize: 35,
   multiplier: 100,
   stopLossAmount: 0,
   takeProfitAmount: 0,
+  trailingStopActivationAmount: 0,
+  trailingStopDistanceAmount: 0,
+  trailingProfitActivationAmount: 0,
+  trailingProfitGivebackAmount: 0,
   enabled: true,
 };
 

@@ -5,7 +5,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import type { CapitalMarket, DerivAccountRow } from '../api-client';
+import type { CapitalMarket, DerivAccountRow, Mt5Account } from '../api-client';
 import {
   ApiError,
   tradingAPI,
@@ -43,11 +43,18 @@ function useTradingDashboardInternal() {
     password: '',
   });
   const [tokenInput, setTokenInput] = useState('');
+  const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
   const [capitalCredentials, setCapitalCredentials] = useState({
     apiKey: '',
     identifier: '',
     password: '',
     accountType: 'demo',
+  });
+  const [mt5AccountForm, setMt5AccountForm] = useState({
+    label: '',
+    login: '',
+    password: '',
+    server: '',
   });
   const [newInstrument, setNewInstrument] = useState<InstrumentConfig>(
     DEFAULT_NEW_INSTRUMENT
@@ -88,6 +95,52 @@ function useTradingDashboardInternal() {
     enabled: !!currentUser,
     refetchInterval: 5000,
     ...poll,
+  });
+
+  const mt5AccountsQuery = useQuery({
+    queryKey: ['dashboard', 'mt5-accounts'],
+    queryFn: async () => (await tradingAPI.getMt5Accounts()).data.accounts,
+    enabled: !!currentUser,
+    ...poll,
+  });
+
+  const createMt5AccountMutation = useMutation({
+    mutationFn: async (payload: typeof mt5AccountForm) =>
+      (await tradingAPI.createMt5Account(payload)).data,
+    onSuccess: async () => {
+      setMt5AccountForm({ label: '', login: '', password: '', server: '' });
+      await queryClient.invalidateQueries({
+        queryKey: ['dashboard', 'mt5-accounts'],
+      });
+      setGlobalSuccess('MT5 account connected');
+      setTimeout(() => setGlobalSuccess(null), 3000);
+    },
+    onError: (error) => setGlobalError(extractErrorMessage(error)),
+  });
+
+  const deleteMt5AccountMutation = useMutation({
+    mutationFn: async (accountId: string) =>
+      (await tradingAPI.deleteMt5Account(accountId)).data,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['dashboard', 'mt5-accounts'],
+      });
+      setGlobalSuccess('MT5 account removed');
+      setTimeout(() => setGlobalSuccess(null), 3000);
+    },
+    onError: (error) => setGlobalError(extractErrorMessage(error)),
+  });
+
+  const generateWebhookMutation = useMutation({
+    mutationFn: async (instrumentId: string) =>
+      (await tradingAPI.generateInstrumentWebhook(instrumentId)).data,
+    onSuccess: (data) => {
+      setGlobalSuccess(
+        `Webhook URL: ${data.webhookUrl} | Secret: ${data.secret}`
+      );
+      setTimeout(() => setGlobalSuccess(null), 15000);
+    },
+    onError: (error) => setGlobalError(extractErrorMessage(error)),
   });
 
   const capitalMarketsQuery = useQuery({
@@ -248,6 +301,12 @@ function useTradingDashboardInternal() {
       queryClient.clear();
       window.location.reload();
     },
+    onError: (error) => setGlobalError(extractErrorMessage(error)),
+  });
+
+  const webhookSecretMutation = useMutation({
+    mutationFn: async () => (await tradingAPI.getWebhookSecret()).data.secret,
+    onSuccess: (secret) => setWebhookSecret(secret),
     onError: (error) => setGlobalError(extractErrorMessage(error)),
   });
 
@@ -582,8 +641,16 @@ function useTradingDashboardInternal() {
     setLoginForm,
     tokenInput,
     setTokenInput,
+    webhookSecret,
+    webhookSecretMutation,
     capitalCredentials,
     setCapitalCredentials,
+    mt5AccountForm,
+    setMt5AccountForm,
+    mt5Accounts: (mt5AccountsQuery.data || []) as Mt5Account[],
+    createMt5AccountMutation,
+    deleteMt5AccountMutation,
+    generateWebhookMutation,
     newInstrument,
     setNewInstrument,
     showAddInstrument,

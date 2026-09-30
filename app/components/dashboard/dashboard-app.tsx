@@ -5,6 +5,7 @@ import type {
   AdminUser,
   AnalyticsSummary,
   DerivAccountRow,
+  InstrumentConfig,
   LogEntry,
   LogSummary,
 } from '../../api-client';
@@ -49,8 +50,16 @@ export function DashboardApp(d: TradingDashboard) {
     capitalMarkets,
     tokenInput,
     setTokenInput,
+    webhookSecret,
+    webhookSecretMutation,
     capitalCredentials,
     setCapitalCredentials,
+    mt5AccountForm,
+    setMt5AccountForm,
+    mt5Accounts,
+    createMt5AccountMutation,
+    deleteMt5AccountMutation,
+    generateWebhookMutation,
     saveTokenMutation,
     deleteTokenMutation,
     instrumentStates,
@@ -104,13 +113,16 @@ export function DashboardApp(d: TradingDashboard) {
       : 'Selected account pending reconnect';
 
   const newInstrumentBroker = newInstrument.brokerType ?? 'deriv_ws';
+  const isMt5Broker = newInstrumentBroker === 'mt5';
   const requestedNewAssetClass = newInstrument.assetClass;
   const newInstrumentAssetClass =
-    newInstrumentBroker === 'capital' &&
+    (newInstrumentBroker === 'capital' || isMt5Broker) &&
     requestedNewAssetClass === 'Synthetic Indices'
       ? 'Forex'
       : (requestedNewAssetClass ??
-        (newInstrumentBroker === 'capital' ? 'Forex' : 'Synthetic Indices'));
+        (newInstrumentBroker === 'capital' || isMt5Broker
+          ? 'Forex'
+          : 'Synthetic Indices'));
   const capitalSymbols = capitalMarkets
     .filter((market) => {
       const type = String(market.instrumentType || '').toUpperCase();
@@ -137,7 +149,7 @@ export function DashboardApp(d: TradingDashboard) {
           newInstrumentAssetClass
         ] ?? defaultInstrumentSymbols);
   const newInstrumentAssetOptions =
-    newInstrumentBroker === 'capital'
+    newInstrumentBroker === 'capital' || isMt5Broker
       ? ASSET_CLASS_OPTIONS.filter(
           (option) => option.value !== 'Synthetic Indices'
         )
@@ -327,10 +339,15 @@ export function DashboardApp(d: TradingDashboard) {
                         label='Broker'
                         value={newInstrumentBroker}
                         onChange={(value) => {
-                          const nextBroker = value as 'deriv_ws' | 'capital';
+                          const nextBroker = value as
+                            | 'deriv_ws'
+                            | 'capital'
+                            | 'mt5';
                           const fallbackAsset = 'Synthetic Indices';
                           const nextAsset =
-                            nextBroker === 'capital' ? 'Forex' : fallbackAsset;
+                            nextBroker === 'capital' || nextBroker === 'mt5'
+                              ? 'Forex'
+                              : fallbackAsset;
                           const nextTimeFrame =
                             TIMEFRAME_OPTIONS_BY_BROKER[nextBroker][0].value;
                           const brokerSymbols =
@@ -358,10 +375,24 @@ export function DashboardApp(d: TradingDashboard) {
                             assetClass: nextAsset,
                             symbol: symbols[0] ?? prev.symbol,
                             timeFrame: nextTimeFrame,
+                            recoverySizePerCurrency:
+                              nextBroker === 'deriv_ws' ? 1 : 0,
+                            maxRecoverySize:
+                              nextBroker === 'deriv_ws'
+                                ? Math.max(35, prev.positionSize)
+                                : nextBroker === 'capital'
+                                  ? 100
+                                  : 0.01,
                             positionSize:
                               nextBroker === 'capital'
                                 ? 100
-                                : prev.positionSize,
+                                : nextBroker === 'mt5'
+                                  ? 0.01
+                                  : 10,
+                            mt5AccountId:
+                              nextBroker === 'mt5'
+                                ? (mt5Accounts[0]?.id ?? null)
+                                : null,
                           }));
                         }}
                         options={BROKER_OPTIONS.map((b) => ({
@@ -369,6 +400,22 @@ export function DashboardApp(d: TradingDashboard) {
                           label: b.label,
                         }))}
                       />
+                      {isMt5Broker ? (
+                        <SelectField
+                          label='Execution account'
+                          value={newInstrument.mt5AccountId ?? ''}
+                          onChange={(value) =>
+                            setNewInstrument((prev) => ({
+                              ...prev,
+                              mt5AccountId: value || null,
+                            }))
+                          }
+                          options={mt5Accounts.map((account) => ({
+                            value: account.id,
+                            label: `${account.label} · ${account.server}`,
+                          }))}
+                        />
+                      ) : null}
                       <SelectField
                         label='Asset class'
                         value={newInstrumentAssetClass}
@@ -385,7 +432,7 @@ export function DashboardApp(d: TradingDashboard) {
                               newInstrumentBroker
                             ] ?? {};
                           const symbols =
-                            newInstrumentBroker === 'capital'
+                            newInstrumentBroker === 'capital' || isMt5Broker
                               ? capitalMarkets
                                   .filter((market) => {
                                     const type = String(
@@ -482,7 +529,9 @@ export function DashboardApp(d: TradingDashboard) {
                         label={
                           newInstrumentBroker === 'capital'
                             ? 'Size (units)'
-                            : 'Stake'
+                            : newInstrumentBroker === 'mt5'
+                              ? 'Volume (lots)'
+                              : 'Stake'
                         }
                         value={newInstrument.positionSize}
                         onChange={(value) =>
@@ -493,12 +542,31 @@ export function DashboardApp(d: TradingDashboard) {
                         }
                       />
                       <SelectField
-                        label='Execution mode'
+                        label='Signal source'
+                        value={newInstrument.signalSource ?? 'ema'}
+                        onChange={(value) =>
+                          setNewInstrument((prev) => ({
+                            ...prev,
+                            signalSource: value as 'ema' | 'tradingview',
+                          }))
+                        }
+                        options={[
+                          { value: 'ema', label: 'Internal EMA candles' },
+                          {
+                            value: 'tradingview',
+                            label: 'TradingView webhook',
+                          },
+                        ]}
+                      />
+                      <SelectField
+                        label='Execution strategy'
                         value={newInstrument.strategy ?? 'fixed_isolated_stake'}
                         onChange={(value) =>
                           setNewInstrument((prev) => ({
                             ...prev,
-                            strategy: value as 'fixed_isolated_stake',
+                            strategy: value as NonNullable<
+                              InstrumentConfig['strategy']
+                            >,
                           }))
                         }
                         options={[
@@ -506,9 +574,44 @@ export function DashboardApp(d: TradingDashboard) {
                             value: 'fixed_isolated_stake',
                             label: 'Fixed Stake',
                           },
+                          {
+                            value: 'standard_accumulative_deficit',
+                            label: 'Standard Accumulative Deficit',
+                          },
+                          {
+                            value: 'aggressive_single_loss_multiplier',
+                            label: 'Aggressive Recovery',
+                          },
                         ]}
                       />
-                      {newInstrumentBroker !== 'capital' ? (
+                      {newInstrument.strategy !== 'fixed_isolated_stake' ? (
+                        <>
+                          <NumberField
+                            label='Native size per 1 account-currency loss'
+                            value={newInstrument.recoverySizePerCurrency ?? 0}
+                            onChange={(value) =>
+                              setNewInstrument((prev) => ({
+                                ...prev,
+                                recoverySizePerCurrency: value,
+                              }))
+                            }
+                          />
+                          <NumberField
+                            label='Maximum native size'
+                            value={
+                              newInstrument.maxRecoverySize ??
+                              newInstrument.positionSize
+                            }
+                            onChange={(value) =>
+                              setNewInstrument((prev) => ({
+                                ...prev,
+                                maxRecoverySize: value,
+                              }))
+                            }
+                          />
+                        </>
+                      ) : null}
+                      {newInstrumentBroker === 'deriv_ws' ? (
                         <NumberField
                           label='Multiplier'
                           value={newInstrument.multiplier}
@@ -521,7 +624,7 @@ export function DashboardApp(d: TradingDashboard) {
                         />
                       ) : null}
                       <NumberField
-                        label='Stop loss (USD, 0=off)'
+                        label='Hard loss limit (account currency, 0=off)'
                         value={newInstrument.stopLossAmount ?? 0}
                         onChange={(value) =>
                           setNewInstrument((prev) => ({
@@ -531,24 +634,56 @@ export function DashboardApp(d: TradingDashboard) {
                         }
                       />
                       <NumberField
-                        label='Take profit (USD, 0=off)'
-                        value={newInstrument.takeProfitAmount ?? 0}
+                        label='Trailing stop activation (account currency)'
+                        value={newInstrument.trailingStopActivationAmount ?? 0}
                         onChange={(value) =>
                           setNewInstrument((prev) => ({
                             ...prev,
-                            takeProfitAmount: value,
+                            trailingStopActivationAmount: value,
+                          }))
+                        }
+                      />
+                      <NumberField
+                        label='Trailing stop distance (0=off)'
+                        value={newInstrument.trailingStopDistanceAmount ?? 0}
+                        onChange={(value) =>
+                          setNewInstrument((prev) => ({
+                            ...prev,
+                            trailingStopDistanceAmount: value,
+                          }))
+                        }
+                      />
+                      <NumberField
+                        label='Trailing profit activation (account currency, 0=off)'
+                        value={
+                          newInstrument.trailingProfitActivationAmount ?? 0
+                        }
+                        onChange={(value) =>
+                          setNewInstrument((prev) => ({
+                            ...prev,
+                            trailingProfitActivationAmount: value,
+                          }))
+                        }
+                      />
+                      <NumberField
+                        label='Trailing giveback (account currency)'
+                        value={newInstrument.trailingProfitGivebackAmount ?? 0}
+                        onChange={(value) =>
+                          setNewInstrument((prev) => ({
+                            ...prev,
+                            trailingProfitGivebackAmount: value,
                           }))
                         }
                       />
                       <div className='flex items-end md:col-span-2 xl:col-span-4'>
                         <ButtonPrimary
                           className='w-full'
-                          disabled={addInstrumentMutation.isPending}
+                          disabled={
+                            addInstrumentMutation.isPending ||
+                            (isMt5Broker && !newInstrument.mt5AccountId)
+                          }
                           onClick={() =>
-                            addInstrumentMutation.mutate({
-                              ...newInstrument,
-                              strategy: 'fixed_isolated_stake',
-                            })
+                            addInstrumentMutation.mutate(newInstrument)
                           }
                         >
                           {addInstrumentMutation.isPending
@@ -580,6 +715,10 @@ export function DashboardApp(d: TradingDashboard) {
                         updates,
                       });
                     }}
+                    onGenerateWebhook={(instrumentId) =>
+                      generateWebhookMutation.mutate(instrumentId)
+                    }
+                    generatingWebhook={generateWebhookMutation.isPending}
                     updatePendingSymbol={
                       updateInstrumentMutation.isPending
                         ? (updateInstrumentMutation.variables?.symbol ?? null)
@@ -594,9 +733,11 @@ export function DashboardApp(d: TradingDashboard) {
               <Panel
                 title='Broker credentials'
                 actions={
-                  tokenStatus?.configured || tokenStatus?.capitalConfigured ? (
+                  tokenStatus?.configured ||
+                  tokenStatus?.capitalConfigured ||
+                  mt5Accounts.length > 0 ? (
                     <span className='text-xs text-muted-foreground'>
-                      Updated {formatDate(tokenStatus.updatedAt)}
+                      Updated {formatDate(tokenStatus?.updatedAt)}
                     </span>
                   ) : null
                 }
@@ -745,6 +886,119 @@ export function DashboardApp(d: TradingDashboard) {
                       )}
                     </div>
                   </div>
+
+                  <div className='rounded-xl border border-border bg-background/40 p-4'>
+                    <div className='flex items-start justify-between gap-3'>
+                      <div>
+                        <h3 className='text-sm font-semibold text-foreground'>
+                          MT5 accounts
+                        </h3>
+                        <p className='mt-1 text-sm text-muted-foreground'>
+                          Connect multiple broker accounts. Passwords are
+                          encrypted and never displayed.
+                        </p>
+                      </div>
+                      <span className='rounded-full bg-muted px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground'>
+                        {mt5Accounts.length} connected
+                      </span>
+                    </div>
+                    <div className='mt-4 space-y-2'>
+                      {mt5Accounts.length === 0 ? (
+                        <p className='rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground'>
+                          No MT5 accounts connected yet.
+                        </p>
+                      ) : (
+                        mt5Accounts.map((account) => (
+                          <div
+                            key={account.id}
+                            className='flex items-center justify-between gap-3 rounded-lg border border-border p-3'
+                          >
+                            <div className='min-w-0'>
+                              <p className='truncate text-sm font-medium text-foreground'>
+                                {account.label}
+                              </p>
+                              <p className='text-xs text-muted-foreground'>
+                                {account.server} · account {account.login}
+                              </p>
+                            </div>
+                            <ButtonGhost
+                              disabled={deleteMt5AccountMutation.isPending}
+                              onClick={() =>
+                                deleteMt5AccountMutation.mutate(account.id)
+                              }
+                            >
+                              Remove
+                            </ButtonGhost>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <div className='mt-4 grid gap-3'>
+                      <input
+                        type='text'
+                        value={mt5AccountForm.label}
+                        onChange={(e) =>
+                          setMt5AccountForm((prev) => ({
+                            ...prev,
+                            label: e.target.value,
+                          }))
+                        }
+                        placeholder='Account label, e.g. Capital demo'
+                        className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
+                      />
+                      <input
+                        type='text'
+                        value={mt5AccountForm.login}
+                        onChange={(e) =>
+                          setMt5AccountForm((prev) => ({
+                            ...prev,
+                            login: e.target.value,
+                          }))
+                        }
+                        placeholder='MT5 login number'
+                        className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
+                      />
+                      <input
+                        type='password'
+                        value={mt5AccountForm.password}
+                        onChange={(e) =>
+                          setMt5AccountForm((prev) => ({
+                            ...prev,
+                            password: e.target.value,
+                          }))
+                        }
+                        placeholder='MT5 password'
+                        className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
+                      />
+                      <input
+                        type='text'
+                        value={mt5AccountForm.server}
+                        onChange={(e) =>
+                          setMt5AccountForm((prev) => ({
+                            ...prev,
+                            server: e.target.value,
+                          }))
+                        }
+                        placeholder='MT5 server, e.g. Capital.ComBah-Demo'
+                        className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
+                      />
+                      <ButtonPrimary
+                        disabled={
+                          !mt5AccountForm.login ||
+                          !mt5AccountForm.password ||
+                          !mt5AccountForm.server ||
+                          createMt5AccountMutation.isPending
+                        }
+                        onClick={() =>
+                          createMt5AccountMutation.mutate(mt5AccountForm)
+                        }
+                      >
+                        {createMt5AccountMutation.isPending
+                          ? 'Connecting…'
+                          : 'Connect MT5 account'}
+                      </ButtonPrimary>
+                    </div>
+                  </div>
                 </div>
 
                 <div className='mt-5 flex flex-wrap gap-2'>
@@ -783,6 +1037,29 @@ export function DashboardApp(d: TradingDashboard) {
                   >
                     Remove all
                   </ButtonGhost>
+                </div>
+                <div className='mt-5 rounded-xl border border-border bg-background/40 p-4'>
+                  <h3 className='text-sm font-semibold text-foreground'>
+                    TradingView webhook
+                  </h3>
+                  <p className='mt-1 text-xs text-muted-foreground'>
+                    Use this secret in TradingView alerts. Select TradingView as
+                    the signal source on an automation first.
+                  </p>
+                  <ButtonGhost
+                    className='mt-3'
+                    disabled={webhookSecretMutation.isPending}
+                    onClick={() => webhookSecretMutation.mutate()}
+                  >
+                    {webhookSecretMutation.isPending
+                      ? 'Generating…'
+                      : 'Show webhook secret'}
+                  </ButtonGhost>
+                  {webhookSecret && (
+                    <p className='mt-3 break-all rounded-lg border border-border bg-background p-3 font-mono text-xs text-foreground'>
+                      {webhookSecret}
+                    </p>
+                  )}
                 </div>
                 <div className='mt-4'>
                   <button
@@ -940,10 +1217,10 @@ export function DashboardApp(d: TradingDashboard) {
                   />
                 </Panel>
                 <Panel title='Per-instrument stats'>
-                  <PerInstrumentTable rows={analytics?.bySymbol || []} />
+                  <BrokerPerInstrumentTables rows={analytics?.bySymbol || []} />
                 </Panel>
                 <Panel title='Latest closed trades'>
-                  <LatestTradesTable
+                  <BrokerLatestTradesTables
                     rows={analytics?.latest || []}
                     page={d.tradesPage}
                     pageSize={d.tradesPageSize}
@@ -1108,6 +1385,13 @@ export function DashboardApp(d: TradingDashboard) {
   );
 }
 
+function formatBrokerLabel(brokerType?: string | null) {
+  if (brokerType === 'capital') return 'Capital';
+  if (brokerType === 'mt5') return 'MT5';
+  if (brokerType === 'deriv_ws') return 'Deriv';
+  return 'Deriv';
+}
+
 function AnalyticsPanel({
   analytics,
   logSummary,
@@ -1118,72 +1402,102 @@ function AnalyticsPanel({
   const ls = logSummary;
   const capitalLog = ls?.byBroker?.capital;
   const derivLog = ls?.byBroker?.deriv_ws;
+  const mt5Log = ls?.byBroker?.mt5;
+  const brokerSummaryEntries = (['deriv_ws', 'capital', 'mt5'] as const).map(
+    (brokerType) => {
+      const broker = analytics?.byBroker?.find(
+        (row) => row.brokerType === brokerType
+      );
+      return {
+        brokerType,
+        label: formatBrokerLabel(brokerType),
+        closedTrades: broker?.closedTrades ?? 0,
+        netProfit: broker?.netProfit ?? 0,
+        winRate: broker?.winRate ?? 0,
+      };
+    }
+  );
+
   return (
-    <div className='grid gap-2 sm:grid-cols-2 lg:grid-cols-3'>
-      <MiniStat
-        label='Capital trades'
-        value={String(capitalLog?.totalTrades ?? 0)}
-      />
-      <MiniStat
-        label='Deriv trades'
-        value={String(derivLog?.totalTrades ?? 0)}
-      />
-      <MiniStat
-        label='Capital open'
-        value={String(capitalLog?.openTrades ?? 0)}
-      />
-      <MiniStat label='Deriv open' value={String(derivLog?.openTrades ?? 0)} />
-      <MiniStat
-        label='Profit factor'
-        value={
-          analytics?.profitFactor == null
-            ? '—'
-            : analytics.profitFactor.toFixed(2)
-        }
-      />
-      <MiniStat
-        label='Win rate'
-        value={analytics ? `${(analytics.winRate * 100).toFixed(1)}%` : '—'}
-      />
-      <MiniStat
-        label='Gross profit'
-        value={analytics ? formatMoney(analytics.grossProfit) : '—'}
-      />
-      <MiniStat
-        label='Gross loss'
-        value={analytics ? formatMoney(analytics.grossLoss) : '—'}
-      />
-      {(['deriv_ws', 'capital'] as const).map((brokerType) => {
-        const broker = analytics?.byBroker?.find(
-          (row) => row.brokerType === brokerType
-        );
-        const label = brokerType === 'capital' ? 'Capital' : 'Deriv';
-        return (
-          <div
-            key={brokerType}
-            className='rounded-lg border border-border bg-background/40 p-3 lg:col-span-1'
-          >
-            <p className='text-xs font-medium uppercase tracking-wide text-muted-foreground'>
-              {label} analytics
-            </p>
-            <div className='mt-2 grid grid-cols-2 gap-2'>
-              <MiniStat
-                label='Net P/L'
-                value={broker ? formatMoney(broker.netProfit) : '—'}
-              />
-              <MiniStat
-                label='Win rate'
-                value={broker ? `${(broker.winRate * 100).toFixed(1)}%` : '—'}
-              />
+    <div className='space-y-4'>
+      <div className='grid gap-2 sm:grid-cols-2 xl:grid-cols-3'>
+        {brokerSummaryEntries.map(
+          ({ brokerType, label, closedTrades, netProfit, winRate }) => (
+            <div
+              key={brokerType}
+              className='rounded-xl border border-border bg-background/40 p-3'
+            >
+              <p className='text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground'>
+                {label}
+              </p>
+              <div className='mt-2 grid grid-cols-2 gap-2'>
+                <MiniStat label='Closed' value={String(closedTrades)} />
+                <MiniStat label='Net P/L' value={formatMoney(netProfit)} />
+                <MiniStat
+                  label='Win rate'
+                  value={`${(winRate * 100).toFixed(1)}%`}
+                />
+                <MiniStat
+                  label='Open'
+                  value={String(
+                    brokerType === 'capital'
+                      ? (capitalLog?.openTrades ?? 0)
+                      : brokerType === 'mt5'
+                        ? (mt5Log?.openTrades ?? 0)
+                        : (derivLog?.openTrades ?? 0)
+                  )}
+                />
+              </div>
             </div>
-          </div>
-        );
-      })}
+          )
+        )}
+      </div>
+
+      <div className='grid gap-2 sm:grid-cols-2 lg:grid-cols-3'>
+        <MiniStat
+          label='Capital trades'
+          value={String(capitalLog?.totalTrades ?? 0)}
+        />
+        <MiniStat label='MT5 trades' value={String(mt5Log?.totalTrades ?? 0)} />
+        <MiniStat
+          label='Deriv trades'
+          value={String(derivLog?.totalTrades ?? 0)}
+        />
+        <MiniStat
+          label='Capital open'
+          value={String(capitalLog?.openTrades ?? 0)}
+        />
+        <MiniStat label='MT5 open' value={String(mt5Log?.openTrades ?? 0)} />
+        <MiniStat
+          label='Deriv open'
+          value={String(derivLog?.openTrades ?? 0)}
+        />
+        <MiniStat
+          label='Profit factor'
+          value={
+            analytics?.profitFactor == null
+              ? '—'
+              : analytics.profitFactor.toFixed(2)
+          }
+        />
+        <MiniStat
+          label='Win rate'
+          value={analytics ? `${(analytics.winRate * 100).toFixed(1)}%` : '—'}
+        />
+        <MiniStat
+          label='Gross profit'
+          value={analytics ? formatMoney(analytics.grossProfit) : '—'}
+        />
+        <MiniStat
+          label='Gross loss'
+          value={analytics ? formatMoney(analytics.grossLoss) : '—'}
+        />
+      </div>
     </div>
   );
 }
 
-function LatestTradesTable({
+function BrokerLatestTradesTables({
   rows,
   page,
   pageSize,
@@ -1196,57 +1510,90 @@ function LatestTradesTable({
   setPage: (n: number) => void;
   total: number | null;
 }) {
-  if (!rows || rows.length === 0) {
+  const brokerOrder = ['mt5', 'capital', 'deriv_ws'] as const;
+  const brokerRows = brokerOrder.map((brokerType) => ({
+    brokerType,
+    rows: (rows || []).filter((row) => row.brokerType === brokerType),
+  }));
+
+  const hasAnyRows = (rows || []).length > 0;
+
+  if (!hasAnyRows) {
     return (
       <p className='text-sm text-muted-foreground'>No closed trades yet.</p>
     );
   }
+
   return (
-    <div>
-      <div className='overflow-x-auto'>
-        <table className='w-full text-left text-sm'>
-          <thead className='text-xs text-muted-foreground'>
-            <tr>
-              <th className='pb-2 font-medium'>Broker</th>
-              <th className='pb-2 font-medium'>Symbol</th>
-              <th className='pb-2 font-medium'>Date</th>
-              <th className='pb-2 font-medium'>Contract</th>
-              <th className='pb-2 text-right font-medium'>Buy</th>
-              <th className='pb-2 text-right font-medium'>Sold</th>
-              <th className='pb-2 text-right font-medium'>P/L</th>
-            </tr>
-          </thead>
-          <tbody className='divide-y divide-border'>
-            {rows.map((row) => (
-              <tr key={`${row.contract_id ?? 'na'}-${row.createdAt}`}>
-                <td className='py-2.5'>
-                  {row.brokerType === 'capital' ? 'Capital' : 'Deriv'}
-                </td>
-                <td className='py-2.5'>{row.symbol ?? '—'}</td>
-                <td className='py-2.5 text-xs text-muted-foreground'>
-                  {formatDate(row.createdAt)}
-                </td>
-                <td className='py-2.5 font-mono text-xs text-muted-foreground'>
-                  {row.contract_id ?? '—'}
-                </td>
-                <td className='py-2.5 text-right tabular-nums'>
-                  {formatMoney(row.buy_price)}
-                </td>
-                <td className='py-2.5 text-right tabular-nums'>
-                  {formatMoney(row.sold_for)}
-                </td>
-                <td
-                  className={`py-2.5 text-right font-medium tabular-nums ${
-                    (row.profit ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'
-                  }`}
-                >
-                  {formatMoney(row.profit)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <div className='space-y-6'>
+      {brokerRows.map(({ brokerType, rows: brokerRowsForType }) => (
+        <div key={brokerType} className='space-y-2'>
+          <div className='flex items-center justify-between'>
+            <h3 className='text-sm font-semibold text-foreground'>
+              {formatBrokerLabel(brokerType)}
+            </h3>
+            <span className='text-xs text-muted-foreground'>
+              {brokerRowsForType.length} trades
+            </span>
+          </div>
+
+          {brokerRowsForType.length === 0 ? (
+            <p className='text-sm text-muted-foreground'>
+              No {formatBrokerLabel(brokerType)} closed trades.
+            </p>
+          ) : (
+            <div className='overflow-x-auto'>
+              <table className='w-full text-left text-sm'>
+                <thead className='text-xs text-muted-foreground'>
+                  <tr>
+                    <th className='pb-2 font-medium'>Broker</th>
+                    <th className='pb-2 font-medium'>Symbol</th>
+                    <th className='pb-2 font-medium'>Date</th>
+                    <th className='pb-2 font-medium'>Contract</th>
+                    <th className='pb-2 text-right font-medium'>Buy</th>
+                    <th className='pb-2 text-right font-medium'>Sold</th>
+                    <th className='pb-2 text-right font-medium'>P/L</th>
+                  </tr>
+                </thead>
+                <tbody className='divide-y divide-border'>
+                  {brokerRowsForType.map((row) => (
+                    <tr key={`${row.contract_id ?? 'na'}-${row.createdAt}`}>
+                      <td className='py-2.5'>
+                        {String(
+                          row.brokerLabel ?? formatBrokerLabel(row.brokerType)
+                        )}
+                      </td>
+                      <td className='py-2.5'>{row.symbol ?? '—'}</td>
+                      <td className='py-2.5 text-xs text-muted-foreground'>
+                        {formatDate(row.createdAt)}
+                      </td>
+                      <td className='py-2.5 font-mono text-xs text-muted-foreground'>
+                        {row.contract_id ?? '—'}
+                      </td>
+                      <td className='py-2.5 text-right tabular-nums'>
+                        {formatMoney(row.buy_price)}
+                      </td>
+                      <td className='py-2.5 text-right tabular-nums'>
+                        {formatMoney(row.sold_for)}
+                      </td>
+                      <td
+                        className={`py-2.5 text-right font-medium tabular-nums ${
+                          (row.profit ?? 0) >= 0
+                            ? 'text-emerald-400'
+                            : 'text-red-400'
+                        }`}
+                      >
+                        {formatMoney(row.profit)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ))}
+
       <div className='mt-2 flex items-center justify-between text-sm'>
         <div className='text-muted-foreground'>
           Page {page} {total ? `of ${Math.ceil(total / pageSize)}` : ''}
@@ -1268,6 +1615,94 @@ function LatestTradesTable({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function BrokerPerInstrumentTables({
+  rows,
+}: {
+  rows: AnalyticsSummary['bySymbol'];
+}) {
+  const brokerOrder = ['mt5', 'capital', 'deriv_ws'] as const;
+  const brokerRows = brokerOrder.map((brokerType) => ({
+    brokerType,
+    rows: (rows || []).filter((row) => row.brokerType === brokerType),
+  }));
+
+  if (!rows || rows.length === 0) {
+    return (
+      <p className='text-sm text-muted-foreground'>No instrument stats yet.</p>
+    );
+  }
+
+  return (
+    <div className='space-y-6'>
+      {brokerRows.map(({ brokerType, rows: brokerRowsForType }) => (
+        <div key={brokerType} className='space-y-2'>
+          <h3 className='text-sm font-semibold text-foreground'>
+            {formatBrokerLabel(brokerType)}
+          </h3>
+          {brokerRowsForType.length === 0 ? (
+            <p className='text-sm text-muted-foreground'>
+              No {formatBrokerLabel(brokerType)} instrument stats.
+            </p>
+          ) : (
+            <div className='overflow-x-auto'>
+              <table className='w-full text-left text-sm'>
+                <thead className='text-xs text-muted-foreground'>
+                  <tr>
+                    <th className='pb-2 font-medium'>Broker</th>
+                    <th className='pb-2 font-medium'>Symbol</th>
+                    <th className='pb-2 text-right font-medium'>Closed</th>
+                    <th className='pb-2 text-right font-medium'>Win rate</th>
+                    <th className='pb-2 text-right font-medium'>Net P/L</th>
+                    <th className='pb-2 text-right font-medium'>
+                      Gross profit
+                    </th>
+                    <th className='pb-2 text-right font-medium'>Gross loss</th>
+                    <th className='pb-2 text-right font-medium'>
+                      Profit factor
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className='divide-y divide-border'>
+                  {brokerRowsForType.map((r) => (
+                    <tr key={`${r.brokerType}:${String(r.symbol)}`}>
+                      <td className='py-2.5'>
+                        {formatBrokerLabel(r.brokerType)}
+                      </td>
+                      <td className='py-2.5'>{r.symbol ?? '—'}</td>
+                      <td className='py-2.5 text-right tabular-nums'>
+                        {String(r.closedTrades ?? 0)}
+                      </td>
+                      <td className='py-2.5 text-right tabular-nums'>
+                        {typeof r.winRate === 'number'
+                          ? `${(r.winRate * 100).toFixed(1)}%`
+                          : '—'}
+                      </td>
+                      <td className='py-2.5 text-right tabular-nums'>
+                        {formatMoney(r.netProfit ?? 0)}
+                      </td>
+                      <td className='py-2.5 text-right tabular-nums'>
+                        {formatMoney(r.grossProfit ?? 0)}
+                      </td>
+                      <td className='py-2.5 text-right tabular-nums'>
+                        {formatMoney(r.grossLoss ?? 0)}
+                      </td>
+                      <td className='py-2.5 text-right tabular-nums'>
+                        {r.profitFactor == null
+                          ? '—'
+                          : r.profitFactor.toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -1296,9 +1731,7 @@ function PerInstrumentTable({ rows }: { rows: AnalyticsSummary['bySymbol'] }) {
         <tbody className='divide-y divide-border'>
           {rows.map((r) => (
             <tr key={`${r.brokerType}:${String(r.symbol)}`}>
-              <td className='py-2.5'>
-                {r.brokerType === 'capital' ? 'Capital' : 'Deriv'}
-              </td>
+              <td className='py-2.5'>{formatBrokerLabel(r.brokerType)}</td>
               <td className='py-2.5'>{r.symbol ?? '—'}</td>
               <td className='py-2.5 text-right tabular-nums'>
                 {String(r.closedTrades ?? 0)}
@@ -1354,10 +1787,19 @@ function RecentActivityTable({ rows }: { rows: LogEntry[] }) {
                   className={`rounded px-2 py-1 text-[10px] font-semibold uppercase ${
                     row.brokerType === 'capital'
                       ? 'bg-emerald-500/15 text-emerald-300'
-                      : 'bg-muted text-muted-foreground'
+                      : row.brokerType === 'mt5'
+                        ? 'bg-sky-500/15 text-sky-300'
+                        : 'bg-muted text-muted-foreground'
                   }`}
                 >
-                  {row.brokerType === 'capital' ? 'Capital.com' : 'Deriv'}
+                  {String(
+                    row.brokerLabel ??
+                      (row.brokerType === 'capital'
+                        ? 'Capital.com'
+                        : row.brokerType === 'mt5'
+                          ? 'MT5'
+                          : 'Deriv')
+                  )}
                 </span>
               </td>
               <td className='py-2.5 text-muted-foreground'>
@@ -1391,7 +1833,14 @@ function RecentActivityTable({ rows }: { rows: LogEntry[] }) {
                 </p>
                 <h3 className='mt-1 text-base font-semibold text-foreground'>
                   {selectedRow.type} ·{' '}
-                  {selectedRow.brokerType === 'capital' ? 'Capital' : 'Deriv'}
+                  {String(
+                    (selectedRow as any).brokerLabel ??
+                      formatBrokerLabel(
+                        typeof selectedRow.brokerType === 'string'
+                          ? selectedRow.brokerType
+                          : null
+                      )
+                  )}
                 </h3>
               </div>
               <button
@@ -1406,9 +1855,14 @@ function RecentActivityTable({ rows }: { rows: LogEntry[] }) {
               <div className='grid gap-2 sm:grid-cols-3'>
                 <MiniStat
                   label='Broker'
-                  value={
-                    selectedRow.brokerType === 'capital' ? 'Capital' : 'Deriv'
-                  }
+                  value={String(
+                    (selectedRow as any).brokerLabel ??
+                      formatBrokerLabel(
+                        typeof selectedRow.brokerType === 'string'
+                          ? selectedRow.brokerType
+                          : null
+                      )
+                  )}
                 />
                 <MiniStat label='Type' value={selectedRow.type} />
                 <MiniStat

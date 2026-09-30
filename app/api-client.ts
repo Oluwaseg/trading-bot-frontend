@@ -74,6 +74,7 @@ export interface TokenStatus {
   } | null;
   derivConnected: boolean;
   capitalReadyForTesting?: boolean;
+  mt5Configured?: boolean;
   brokerStatus?: {
     deriv: {
       configured: boolean;
@@ -97,6 +98,18 @@ export interface BrokerCredentialPayload {
   capitalPassword?: string;
   capitalAccountType?: string;
   preferredDerivAccountId?: string;
+}
+
+export interface Mt5Account {
+  id: string;
+  userId: string;
+  label: string;
+  login: string;
+  server: string;
+  broker?: string | null;
+  status: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface CapitalMarket {
@@ -176,6 +189,7 @@ export interface LogSummary {
 
 export interface TradeCloseAnalyticsRow {
   brokerType: BrokerType;
+  brokerLabel?: string | null;
   symbol: string | null;
   contract_id: string | null;
   buy_price: number | null;
@@ -238,9 +252,12 @@ export interface AnalyticsSummary {
   latest: TradeCloseAnalyticsRow[];
 }
 
-export type InstrumentRecoveryStrategy = 'fixed_isolated_stake';
+export type InstrumentRecoveryStrategy =
+  | 'fixed_isolated_stake'
+  | 'standard_accumulative_deficit'
+  | 'aggressive_single_loss_multiplier';
 
-export type BrokerType = 'deriv_ws' | 'capital';
+export type BrokerType = 'deriv_ws' | 'capital' | 'mt5';
 export type AssetClassType =
   | 'Synthetic Indices'
   | 'Forex'
@@ -254,6 +271,9 @@ export interface InstrumentConfig {
   userId?: string;
   symbol: string;
   brokerType?: BrokerType;
+  mt5AccountId?: string | null;
+  signalSource?: 'ema' | 'tradingview';
+  webhookConfigured?: boolean;
   assetClass?: AssetClassType;
   shortEmaPeriod: number;
   longEmaPeriod: number;
@@ -261,11 +281,23 @@ export interface InstrumentConfig {
   historyDepth: number;
   positionSize: number;
   strategy?: InstrumentRecoveryStrategy;
+  /** Native size units added for each unit of realized account-currency loss. */
+  recoverySizePerCurrency?: number;
+  /** Maximum broker-native position size for recovery strategies. */
+  maxRecoverySize?: number;
   multiplier: number;
-  /** Max loss in USD before Deriv auto-closes multiplier (0 = off) */
+  /** Initial account-currency loss limit (0 = off). */
   stopLossAmount?: number;
-  /** Take-profit in USD (0 = off) */
+  /** Legacy fixed take-profit; new UI uses trailing thresholds instead. */
   takeProfitAmount?: number;
+  /** Activate trailing stop after this unrealized account-currency profit (0 = immediately). */
+  trailingStopActivationAmount?: number;
+  /** Trail distance below peak unrealized profit for the trailing stop (0 = off). */
+  trailingStopDistanceAmount?: number;
+  /** Start trailing profit after unrealized account-currency profit reaches this amount (0 = off). */
+  trailingProfitActivationAmount?: number;
+  /** Close after profit retraces this much from its post-activation peak (0 = off). */
+  trailingProfitGivebackAmount?: number;
   /** Seconds after a trade before opening again (0 = off) */
   tradeCooldownSeconds?: number;
   /** Min |short-long|/long gap in basis points to act on a crossover (0 = off) */
@@ -343,14 +375,31 @@ export const tradingAPI = {
   },
 
   getTokenStatus: () => apiClient.get<TokenStatus>('/user/token'),
+  getWebhookSecret: () =>
+    apiClient.get<{ secret: string }>('/user/webhook-secret'),
   saveToken: (payload: BrokerCredentialPayload) =>
     apiClient.put<{
       success: boolean;
       tokenLast4?: string | null;
     }>('/user/token', payload),
   deleteToken: () => apiClient.delete<{ success: boolean }>('/user/token'),
+  getMt5Accounts: () =>
+    apiClient.get<{ accounts: Mt5Account[] }>('/mt5/accounts'),
+  createMt5Account: (payload: {
+    label?: string;
+    login: string;
+    password: string;
+    server: string;
+    broker?: string;
+  }) => apiClient.post<{ account: Mt5Account }>('/mt5/accounts', payload),
+  deleteMt5Account: (accountId: string) =>
+    apiClient.delete<{ deleted: boolean }>(`/mt5/accounts/${accountId}`),
 
   getInstruments: () => apiClient.get<InstrumentConfig[]>('/instruments'),
+  generateInstrumentWebhook: (instrumentId: string) =>
+    apiClient.post<{ secret: string; webhookUrl: string }>(
+      `/instruments/${instrumentId}/webhook-secret`
+    ),
   getInstrumentState: (symbol: string, brokerType = 'deriv_ws') =>
     apiClient.get<InstrumentState>(
       `/instruments/${symbol}/state?brokerType=${encodeURIComponent(brokerType)}`
