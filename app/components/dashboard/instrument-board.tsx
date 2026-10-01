@@ -209,8 +209,7 @@ function InstrumentRow({
     const contractId = String(open.contract_id);
     const currentProfit = Number(open.profit);
     setTrailSamples((previous) => {
-      const values =
-        previous.contractId === contractId ? previous.values : [];
+      const values = previous.contractId === contractId ? previous.values : [];
       if (values.at(-1) === currentProfit) return previous;
       return {
         contractId,
@@ -849,7 +848,9 @@ function ProfitTrailVisual({
               ? 'Waiting for bot peak'
               : 'Trailing P/L history'}
         </span>
-        <span className='text-muted-foreground'>Recent samples · account currency</span>
+        <span className='text-muted-foreground'>
+          Recent samples · account currency
+        </span>
       </div>
       <svg
         viewBox={`0 0 ${chartWidth} ${chartHeight}`}
