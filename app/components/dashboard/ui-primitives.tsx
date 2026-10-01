@@ -114,18 +114,20 @@ export function TextField({
 
 export function SelectField({
   label,
+  help,
   value,
   onChange,
   options,
 }: {
   label: string;
+  help?: string;
   value: string;
   onChange: (value: string) => void;
   options: Array<{ value: string; label: string }>;
 }) {
   return (
     <label className='block text-sm'>
-      <span className='mb-1.5 block text-muted-foreground'>{label}</span>
+      <FieldLabel label={label} help={help} />
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -143,10 +145,12 @@ export function SelectField({
 
 export function NumberField({
   label,
+  help,
   value,
   onChange,
 }: {
   label: string;
+  help?: string;
   value: number;
   onChange: (value: number) => void;
 }) {
@@ -169,7 +173,7 @@ export function NumberField({
 
   return (
     <label className='block text-sm'>
-      <span className='mb-1.5 block text-muted-foreground'>{label}</span>
+      <FieldLabel label={label} help={help} />
       <input
         type='text'
         inputMode='decimal'
@@ -198,6 +202,24 @@ export function NumberField({
         className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background transition focus-visible:ring-2 focus-visible:ring-ring'
       />
     </label>
+  );
+}
+
+function FieldLabel({ label, help }: { label: string; help?: string }) {
+  return (
+    <span className='mb-1.5 flex items-center gap-1.5 text-muted-foreground'>
+      <span>{label}</span>
+      {help ? (
+        <Tooltip content={help}>
+          <span
+            aria-label={`Help: ${label}`}
+            className='inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-current text-[10px] font-semibold leading-none'
+          >
+            ?
+          </span>
+        </Tooltip>
+      ) : null}
+    </span>
   );
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   CapitalMarket,
   InstrumentConfig,
@@ -124,6 +124,10 @@ function InstrumentRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Partial<InstrumentConfig>>({});
+  const [trailSamples, setTrailSamples] = useState<{
+    contractId: string | null;
+    values: number[];
+  }>({ contractId: null, values: [] });
 
   const openEdit = () => {
     const c = instrument.config;
@@ -198,6 +202,22 @@ function InstrumentRow({
   };
 
   const open = instrument.openPosition;
+  useEffect(() => {
+    if (!open || open.profit == null || !Number.isFinite(Number(open.profit))) {
+      return;
+    }
+    const contractId = String(open.contract_id);
+    const currentProfit = Number(open.profit);
+    setTrailSamples((previous) => {
+      const values =
+        previous.contractId === contractId ? previous.values : [];
+      if (values.at(-1) === currentProfit) return previous;
+      return {
+        contractId,
+        values: [...values, currentProfit].slice(-60),
+      };
+    });
+  }, [open?.contract_id, open?.profit]);
   const trend = instrument.signal?.state ?? '—';
   const signal = instrument.signal?.signal ?? '—';
   const rateLimited =
@@ -408,6 +428,11 @@ function InstrumentRow({
                       currentProfit={open.profit}
                       peakProfit={open.trailingPeakProfit}
                       stopLevel={open.trailingStopLevel}
+                      samples={
+                        trailSamples.contractId === String(open.contract_id)
+                          ? trailSamples.values
+                          : []
+                      }
                     />
                   ) : null}
                 </div>
@@ -475,6 +500,7 @@ function InstrumentRow({
           <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-4'>
             <SelectField
               label='Broker'
+              help='Chooses which connected execution service places and manages this instrument’s trades.'
               value={editBroker}
               onChange={(value) => {
                 const nextBroker = value as NonNullable<
@@ -527,6 +553,7 @@ function InstrumentRow({
             />
             <SelectField
               label='Asset class'
+              help='Groups symbols by market type. The chosen broker determines which classes and symbols are available.'
               value={editAsset}
               onChange={(value) => {
                 const nextAsset = value as NonNullable<
@@ -567,6 +594,7 @@ function InstrumentRow({
             />
             <SelectField
               label='Symbol'
+              help='The exact broker symbol to monitor and trade. Broker suffixes and naming may differ.'
               value={draft.symbol ?? instrument.symbol}
               onChange={(value) =>
                 setDraft((prev) => ({ ...prev, symbol: value }))
@@ -587,6 +615,7 @@ function InstrumentRow({
             />
             <NumberField
               label='Short EMA'
+              help='Number of candles used for the faster EMA. Lower values react more quickly to price changes.'
               value={draft.shortEmaPeriod ?? 1}
               onChange={(value) =>
                 setDraft((prev) => ({ ...prev, shortEmaPeriod: value }))
@@ -594,6 +623,7 @@ function InstrumentRow({
             />
             <NumberField
               label='Long EMA'
+              help='Number of candles used for the slower EMA. Higher values smooth the trend signal.'
               value={draft.longEmaPeriod ?? 10}
               onChange={(value) =>
                 setDraft((prev) => ({ ...prev, longEmaPeriod: value }))
@@ -601,6 +631,7 @@ function InstrumentRow({
             />
             <SelectField
               label='Timeframe'
+              help='Candle duration used to calculate the EMA signal.'
               value={draft.timeFrame ?? '1m'}
               onChange={(value) =>
                 setDraft((prev) => ({ ...prev, timeFrame: value }))
@@ -609,6 +640,7 @@ function InstrumentRow({
             />
             <NumberField
               label='History depth'
+              help='How many recent candles the signal engine requests to calculate and validate its EMAs.'
               value={draft.historyDepth ?? 300}
               onChange={(value) =>
                 setDraft((prev) => ({ ...prev, historyDepth: value }))
@@ -622,6 +654,13 @@ function InstrumentRow({
                     ? 'Volume (lots)'
                     : 'Stake'
               }
+              help={
+                editBroker === 'capital'
+                  ? 'Starting Capital position size in broker units.'
+                  : editBroker === 'mt5'
+                    ? 'Starting MT5 trade volume in lots. Broker minimums and steps still apply.'
+                    : 'Starting Deriv stake amount in the account currency.'
+              }
               value={draft.positionSize ?? 10}
               onChange={(value) =>
                 setDraft((prev) => ({ ...prev, positionSize: value }))
@@ -629,6 +668,7 @@ function InstrumentRow({
             />
             <SelectField
               label='Strategy'
+              help='Fixed keeps every trade at its base size. Standard adds one scaled realized loss after a loss; Aggressive adds twice that amount. Wins reset to base.'
               value={draft.strategy ?? 'fixed_isolated_stake'}
               onChange={(value) =>
                 setDraft((prev) => ({
@@ -655,6 +695,7 @@ function InstrumentRow({
               <>
                 <NumberField
                   label='Native size per 1 account-currency loss'
+                  help='How many broker-native size units to add for each unit of realized account-currency loss. Capital uses units; MT5 uses lots; Deriv uses stake.'
                   value={draft.recoverySizePerCurrency ?? 0}
                   onChange={(value) =>
                     setDraft((prev) => ({
@@ -665,6 +706,7 @@ function InstrumentRow({
                 />
                 <NumberField
                   label='Maximum native size'
+                  help='Upper limit for the resulting broker-native order size during recovery. Set a conservative limit for this instrument and account.'
                   value={draft.maxRecoverySize ?? draft.positionSize ?? 10}
                   onChange={(value) =>
                     setDraft((prev) => ({ ...prev, maxRecoverySize: value }))
@@ -675,6 +717,7 @@ function InstrumentRow({
             {editBroker !== 'capital' ? (
               <NumberField
                 label='Multiplier'
+                help='Deriv multiplier setting for multiplier contracts. This does not change Capital units or MT5 lots.'
                 value={draft.multiplier ?? 100}
                 onChange={(value) =>
                   setDraft((prev) => ({ ...prev, multiplier: value }))
@@ -683,6 +726,7 @@ function InstrumentRow({
             ) : null}
             <NumberField
               label='Hard loss limit (account currency, 0=off)'
+              help='Independent maximum loss. For example, 10 attempts a close at -10 account-currency P/L. If another stop is tighter, that one can trigger first.'
               value={draft.stopLossAmount ?? 0}
               onChange={(value) =>
                 setDraft((prev) => ({ ...prev, stopLossAmount: value }))
@@ -690,6 +734,7 @@ function InstrumentRow({
             />
             <NumberField
               label='Trailing stop from entry (distance, 0=off)'
+              help='Starts at entry with this much downside room, then follows the best observed P/L by the same distance. A value of 5 starts at -5; after reaching +20, the stop line is +15.'
               value={draft.trailingStopDistanceAmount ?? 0}
               onChange={(value) =>
                 setDraft((prev) => ({
@@ -700,6 +745,7 @@ function InstrumentRow({
             />
             <NumberField
               label='Trailing profit activation (account currency, 0=off)'
+              help='Profit level that must be reached before trailing take-profit begins watching for a pullback. Requires a nonzero giveback setting.'
               value={draft.trailingProfitActivationAmount ?? 0}
               onChange={(value) =>
                 setDraft((prev) => ({
@@ -710,6 +756,7 @@ function InstrumentRow({
             />
             <NumberField
               label='Trailing take-profit giveback (account currency, 0=off)'
+              help='After activation, attempts a close when current P/L falls this far below the best observed P/L. It can overlap with trailing stop; whichever threshold is hit first triggers the close.'
               value={draft.trailingProfitGivebackAmount ?? 0}
               onChange={(value) =>
                 setDraft((prev) => ({
@@ -737,10 +784,12 @@ function ProfitTrailVisual({
   currentProfit,
   peakProfit,
   stopLevel,
+  samples,
 }: {
   currentProfit?: number | null;
   peakProfit?: number | null;
   stopLevel?: number | null;
+  samples: number[];
 }) {
   const current =
     currentProfit != null && Number.isFinite(Number(currentProfit))
@@ -755,68 +804,113 @@ function ProfitTrailVisual({
       ? Number(stopLevel)
       : null;
 
-  if (current == null || peak == null || stop == null) {
+  if (current == null) {
     return (
       <p className='mt-2 text-[11px] text-muted-foreground'>
-        Waiting for the bot to record live P/L and its trailing level.
+        Waiting for live P/L before plotting the trailing rule.
       </p>
     );
   }
 
-  const values = [0, current, peak, stop];
+  const values = [0, current, ...samples];
+  if (peak != null) values.push(peak);
+  if (stop != null) values.push(stop);
   const rawMin = Math.min(...values);
   const rawMax = Math.max(...values);
   const padding = Math.max((rawMax - rawMin) * 0.12, 1);
   const scaleMin = rawMin - padding;
   const scaleMax = rawMax + padding;
   const span = scaleMax - scaleMin;
-  const markerPosition = (value: number) =>
-    `${Math.min(100, Math.max(0, ((value - scaleMin) / span) * 100))}%`;
+  const chartWidth = 360;
+  const chartHeight = 92;
+  const chartTop = 8;
+  const chartBottom = 82;
+  const chartX = (index: number) =>
+    samples.length <= 1
+      ? chartWidth - 6
+      : 6 + (index / (samples.length - 1)) * (chartWidth - 12);
+  const chartY = (value: number) =>
+    chartBottom - ((value - scaleMin) / span) * (chartBottom - chartTop);
+  const points = samples
+    .map((value, index) => `${chartX(index)},${chartY(value)}`)
+    .join(' ');
   const formatSigned = (value: number) =>
     `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
 
-  const stopReached = current <= stop;
+  const stopReached = stop != null && current <= stop;
 
   return (
     <div className='mt-3 max-w-xl rounded-md border border-border/70 bg-background/50 px-3 py-2'>
       <div className='flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]'>
         <span className='font-medium text-foreground'>
-          {stopReached ? 'Stop threshold reached' : 'Trailing stop monitor'}
+          {stopReached
+            ? 'Stop threshold reached'
+            : peak == null
+              ? 'Waiting for bot peak'
+              : 'Trailing P/L history'}
         </span>
-        <span className='text-muted-foreground'>Account-currency P/L</span>
+        <span className='text-muted-foreground'>Recent samples · account currency</span>
       </div>
-      <div
-        className='relative mx-1 my-3 h-2 rounded-full bg-muted'
+      <svg
+        viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+        className='mt-2 block h-24 w-full'
+        preserveAspectRatio='none'
         role='img'
-        aria-label={`Current P/L ${formatSigned(current)}, bot-observed peak ${formatSigned(peak)}, trailing stop ${formatSigned(stop)}`}
+        aria-label={`Recent observed P/L. Current ${formatSigned(current)}${peak == null ? '' : `, peak ${formatSigned(peak)}`}${stop == null ? '' : `, stop ${formatSigned(stop)}`}.`}
       >
-        <span
-          className='absolute -top-1 h-4 w-px bg-muted-foreground/70'
-          style={{ left: markerPosition(0) }}
-          aria-hidden='true'
+        <line
+          x1='0'
+          x2={chartWidth}
+          y1={chartY(0)}
+          y2={chartY(0)}
+          stroke='currentColor'
+          strokeOpacity='0.35'
+          strokeDasharray='3 4'
         />
-        <span
-          className='absolute -top-1 h-4 w-0.5 bg-rose-400'
-          style={{ left: markerPosition(stop) }}
-          aria-hidden='true'
-        />
-        <span
-          className='absolute -top-1 h-4 w-0.5 bg-cyan-300'
-          style={{ left: markerPosition(peak) }}
-          aria-hidden='true'
-        />
-        <span
-          className={`absolute -top-0.5 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-background ${stopReached ? 'bg-rose-400' : 'bg-emerald-300'}`}
-          style={{ left: markerPosition(current) }}
-          aria-hidden='true'
-        />
-      </div>
+        {stop != null ? (
+          <line
+            x1='0'
+            x2={chartWidth}
+            y1={chartY(stop)}
+            y2={chartY(stop)}
+            stroke='#fb7185'
+            strokeOpacity='0.85'
+            strokeDasharray='5 4'
+          />
+        ) : null}
+        {points ? (
+          <polyline
+            points={points}
+            fill='none'
+            stroke='#34d399'
+            strokeWidth='2.5'
+            strokeLinecap='round'
+            strokeLinejoin='round'
+            vectorEffect='non-scaling-stroke'
+          />
+        ) : null}
+        {samples.length > 0 ? (
+          <circle
+            cx={chartX(samples.length - 1)}
+            cy={chartY(current)}
+            r='4'
+            fill={stopReached ? '#fb7185' : '#34d399'}
+            stroke='var(--background)'
+            strokeWidth='2'
+            vectorEffect='non-scaling-stroke'
+          />
+        ) : null}
+      </svg>
       <div className='flex flex-wrap gap-x-4 gap-y-1 text-[11px]'>
         <span className='text-emerald-200'>
           Current {formatSigned(current)}
         </span>
-        <span className='text-cyan-200'>Peak {formatSigned(peak)}</span>
-        <span className='text-rose-200'>Stop {formatSigned(stop)}</span>
+        <span className='text-cyan-200'>
+          Bot peak {peak == null ? 'not recorded' : formatSigned(peak)}
+        </span>
+        <span className='text-rose-200'>
+          Stop {stop == null ? 'not available' : formatSigned(stop)}
+        </span>
         <span className='text-muted-foreground'>Zero 0.00</span>
       </div>
     </div>
