@@ -634,17 +634,7 @@ export function DashboardApp(d: TradingDashboard) {
                         }
                       />
                       <NumberField
-                        label='Trailing stop activation (account currency)'
-                        value={newInstrument.trailingStopActivationAmount ?? 0}
-                        onChange={(value) =>
-                          setNewInstrument((prev) => ({
-                            ...prev,
-                            trailingStopActivationAmount: value,
-                          }))
-                        }
-                      />
-                      <NumberField
-                        label='Trailing stop distance (0=off)'
+                        label='Trailing stop from entry (distance, 0=off)'
                         value={newInstrument.trailingStopDistanceAmount ?? 0}
                         onChange={(value) =>
                           setNewInstrument((prev) => ({

@@ -290,8 +290,6 @@ export interface InstrumentConfig {
   stopLossAmount?: number;
   /** Legacy fixed take-profit; new UI uses trailing thresholds instead. */
   takeProfitAmount?: number;
-  /** Activate trailing stop after this unrealized account-currency profit (0 = immediately). */
-  trailingStopActivationAmount?: number;
   /** Trail distance below peak unrealized profit for the trailing stop (0 = off). */
   trailingStopDistanceAmount?: number;
   /** Start trailing profit after unrealized account-currency profit reaches this amount (0 = off). */
@@ -343,6 +341,8 @@ export interface InstrumentState {
     bid_price?: number | null;
     takeProfitAmount?: number;
     stopLossAmount?: number;
+    trailingPeakProfit?: number | null;
+    trailingStopLevel?: number | null;
   } | null;
   recentTrades: Array<Record<string, unknown>>;
 }

@@ -102,7 +102,6 @@ export const DEFAULT_NEW_INSTRUMENT: InstrumentConfig = {
   multiplier: 100,
   stopLossAmount: 0,
   takeProfitAmount: 0,
-  trailingStopActivationAmount: 0,
   trailingStopDistanceAmount: 0,
   trailingProfitActivationAmount: 0,
   trailingProfitGivebackAmount: 0,

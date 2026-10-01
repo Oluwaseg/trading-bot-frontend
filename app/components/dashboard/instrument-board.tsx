@@ -148,7 +148,6 @@ function InstrumentRow({
       multiplier: c.multiplier,
       stopLossAmount: c.stopLossAmount ?? 0,
       takeProfitAmount: 0,
-      trailingStopActivationAmount: c.trailingStopActivationAmount ?? 0,
       trailingStopDistanceAmount: c.trailingStopDistanceAmount ?? 0,
       trailingProfitActivationAmount: c.trailingProfitActivationAmount ?? 0,
       trailingProfitGivebackAmount: c.trailingProfitGivebackAmount ?? 0,
@@ -186,7 +185,6 @@ function InstrumentRow({
         multiplier: draft.multiplier,
         stopLossAmount: draft.stopLossAmount,
         takeProfitAmount: 0,
-        trailingStopActivationAmount: draft.trailingStopActivationAmount ?? 0,
         trailingStopDistanceAmount: draft.trailingStopDistanceAmount ?? 0,
         trailingProfitActivationAmount:
           draft.trailingProfitActivationAmount ?? 0,
@@ -395,10 +393,23 @@ function InstrumentRow({
                     {open.profit != null
                       ? ` · P/L ${open.profit >= 0 ? '+' : ''}${Number(open.profit).toFixed(2)}`
                       : ''}
+                    {open.trailingPeakProfit != null
+                      ? ` · Bot peak +${Number(open.trailingPeakProfit).toFixed(2)}`
+                      : ' · Bot peak not recorded'}
+                    {open.trailingStopLevel != null
+                      ? ` · Trail closes at +${Number(open.trailingStopLevel).toFixed(2)}`
+                      : ''}
                     {open.bid_price != null
                       ? ` · value ${instrument.config.brokerType === 'capital' ? Number(open.bid_price).toFixed(5) : `$${Number(open.bid_price).toFixed(2)}`}`
                       : ''}
                   </p>
+                  {Number(instrument.config.trailingStopDistanceAmount) > 0 ? (
+                    <ProfitTrailVisual
+                      currentProfit={open.profit}
+                      peakProfit={open.trailingPeakProfit}
+                      stopLevel={open.trailingStopLevel}
+                    />
+                  ) : null}
                 </div>
                 <ButtonPrimary
                   className='bg-destructive text-destructive-foreground hover:opacity-90 sm:shrink-0'
@@ -678,17 +689,7 @@ function InstrumentRow({
               }
             />
             <NumberField
-              label='Trailing stop activation (account currency, 0=from entry)'
-              value={draft.trailingStopActivationAmount ?? 0}
-              onChange={(value) =>
-                setDraft((prev) => ({
-                  ...prev,
-                  trailingStopActivationAmount: value,
-                }))
-              }
-            />
-            <NumberField
-              label='Trailing stop distance (0=off)'
+              label='Trailing stop from entry (distance, 0=off)'
               value={draft.trailingStopDistanceAmount ?? 0}
               onChange={(value) =>
                 setDraft((prev) => ({
@@ -728,6 +729,96 @@ function InstrumentRow({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ProfitTrailVisual({
+  currentProfit,
+  peakProfit,
+  stopLevel,
+}: {
+  currentProfit?: number | null;
+  peakProfit?: number | null;
+  stopLevel?: number | null;
+}) {
+  const current =
+    currentProfit != null && Number.isFinite(Number(currentProfit))
+      ? Number(currentProfit)
+      : null;
+  const peak =
+    peakProfit != null && Number.isFinite(Number(peakProfit))
+      ? Number(peakProfit)
+      : null;
+  const stop =
+    stopLevel != null && Number.isFinite(Number(stopLevel))
+      ? Number(stopLevel)
+      : null;
+
+  if (current == null || peak == null || stop == null) {
+    return (
+      <p className='mt-2 text-[11px] text-muted-foreground'>
+        Waiting for the bot to record live P/L and its trailing level.
+      </p>
+    );
+  }
+
+  const values = [0, current, peak, stop];
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const padding = Math.max((rawMax - rawMin) * 0.12, 1);
+  const scaleMin = rawMin - padding;
+  const scaleMax = rawMax + padding;
+  const span = scaleMax - scaleMin;
+  const markerPosition = (value: number) =>
+    `${Math.min(100, Math.max(0, ((value - scaleMin) / span) * 100))}%`;
+  const formatSigned = (value: number) =>
+    `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
+
+  const stopReached = current <= stop;
+
+  return (
+    <div className='mt-3 max-w-xl rounded-md border border-border/70 bg-background/50 px-3 py-2'>
+      <div className='flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]'>
+        <span className='font-medium text-foreground'>
+          {stopReached ? 'Stop threshold reached' : 'Trailing stop monitor'}
+        </span>
+        <span className='text-muted-foreground'>Account-currency P/L</span>
+      </div>
+      <div
+        className='relative mx-1 my-3 h-2 rounded-full bg-muted'
+        role='img'
+        aria-label={`Current P/L ${formatSigned(current)}, bot-observed peak ${formatSigned(peak)}, trailing stop ${formatSigned(stop)}`}
+      >
+        <span
+          className='absolute -top-1 h-4 w-px bg-muted-foreground/70'
+          style={{ left: markerPosition(0) }}
+          aria-hidden='true'
+        />
+        <span
+          className='absolute -top-1 h-4 w-0.5 bg-rose-400'
+          style={{ left: markerPosition(stop) }}
+          aria-hidden='true'
+        />
+        <span
+          className='absolute -top-1 h-4 w-0.5 bg-cyan-300'
+          style={{ left: markerPosition(peak) }}
+          aria-hidden='true'
+        />
+        <span
+          className={`absolute -top-0.5 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-background ${stopReached ? 'bg-rose-400' : 'bg-emerald-300'}`}
+          style={{ left: markerPosition(current) }}
+          aria-hidden='true'
+        />
+      </div>
+      <div className='flex flex-wrap gap-x-4 gap-y-1 text-[11px]'>
+        <span className='text-emerald-200'>
+          Current {formatSigned(current)}
+        </span>
+        <span className='text-cyan-200'>Peak {formatSigned(peak)}</span>
+        <span className='text-rose-200'>Stop {formatSigned(stop)}</span>
+        <span className='text-muted-foreground'>Zero 0.00</span>
+      </div>
     </div>
   );
 }
