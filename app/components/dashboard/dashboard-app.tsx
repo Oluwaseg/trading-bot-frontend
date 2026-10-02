@@ -50,13 +50,10 @@ export function DashboardApp(d: TradingDashboard) {
     globalSuccess,
     health,
     tokenStatus,
-    capitalMarkets,
     tokenInput,
     setTokenInput,
     webhookSecret,
     webhookSecretMutation,
-    capitalCredentials,
-    setCapitalCredentials,
     mt5AccountForm,
     setMt5AccountForm,
     mt5Accounts,
@@ -124,13 +121,9 @@ export function DashboardApp(d: TradingDashboard) {
     }
   };
 
-  const capitalOpenPositionCount = instrumentStates.filter(
-    (instrument) =>
-      instrument.config.brokerType === 'capital' && !!instrument.openPosition
-  ).length;
   const derivOpenPositionCount = instrumentStates.filter(
     (instrument) =>
-      (instrument.config.brokerType ?? 'deriv_ws') !== 'capital' &&
+      (instrument.config.brokerType ?? 'deriv_ws') === 'deriv_ws' &&
       !!instrument.openPosition
   ).length;
   const preferredDerivAccountId = tokenStatus?.preferredDerivAccountId ?? null;
@@ -146,46 +139,21 @@ export function DashboardApp(d: TradingDashboard) {
   const isMt5Broker = newInstrumentBroker === 'mt5';
   const requestedNewAssetClass = newInstrument.assetClass;
   const newInstrumentAssetClass =
-    (newInstrumentBroker === 'capital' || isMt5Broker) &&
-    requestedNewAssetClass === 'Synthetic Indices'
+    isMt5Broker && requestedNewAssetClass === 'Synthetic Indices'
       ? 'Forex'
       : (requestedNewAssetClass ??
-        (newInstrumentBroker === 'capital' || isMt5Broker
-          ? 'Forex'
-          : 'Synthetic Indices'));
-  const capitalSymbols = capitalMarkets
-    .filter((market) => {
-      const type = String(market.instrumentType || '').toUpperCase();
-      if (newInstrumentAssetClass === 'Forex') return type === 'CURRENCIES';
-      if (newInstrumentAssetClass === 'Commodities')
-        return type === 'COMMODITIES';
-      if (newInstrumentAssetClass === 'Indices') return type === 'INDICES';
-      if (newInstrumentAssetClass === 'Stocks') return type === 'SHARES';
-      if (newInstrumentAssetClass === 'Crypto')
-        return type === 'CRYPTOCURRENCIES';
-      return false;
-    })
-    .map((market) => market.epic)
-    .filter(Boolean);
-  const defaultInstrumentSymbols =
-    newInstrumentBroker === 'capital'
-      ? capitalSymbols
-      : (SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws['Synthetic Indices'] ??
-        []);
+        (isMt5Broker ? 'Forex' : 'Synthetic Indices'));
   const newInstrumentSymbols =
-    newInstrumentBroker === 'capital'
-      ? capitalSymbols
-      : (SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[newInstrumentBroker]?.[
-          newInstrumentAssetClass
-        ] ?? defaultInstrumentSymbols);
-  const newInstrumentAssetOptions =
-    newInstrumentBroker === 'capital' || isMt5Broker
-      ? ASSET_CLASS_OPTIONS.filter(
-          (option) => option.value !== 'Synthetic Indices'
-        )
-      : ASSET_CLASS_OPTIONS.filter(
-          (option) => option.value === 'Synthetic Indices'
-        );
+    SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[newInstrumentBroker]?.[
+      newInstrumentAssetClass
+    ] ?? [];
+  const newInstrumentAssetOptions = isMt5Broker
+    ? ASSET_CLASS_OPTIONS.filter(
+        (option) => option.value !== 'Synthetic Indices'
+      )
+    : ASSET_CLASS_OPTIONS.filter(
+        (option) => option.value === 'Synthetic Indices'
+      );
 
   return (
     <div className='flex min-h-screen bg-background text-foreground'>
@@ -334,11 +302,6 @@ export function DashboardApp(d: TradingDashboard) {
                     hint='Automation enabled'
                   />
                   <Kpi
-                    label='Capital open positions'
-                    value={capitalOpenPositionCount}
-                    hint='Capital portfolio'
-                  />
-                  <Kpi
                     label='Deriv open positions'
                     value={derivOpenPositionCount}
                     hint='Deriv portfolio'
@@ -369,35 +332,21 @@ export function DashboardApp(d: TradingDashboard) {
                         label='Broker'
                         value={newInstrumentBroker}
                         onChange={(value) => {
-                          const nextBroker = value as
-                            | 'deriv_ws'
-                            | 'capital'
-                            | 'mt5';
+                          const nextBroker = value as 'deriv_ws' | 'mt5';
                           const fallbackAsset = 'Synthetic Indices';
                           const nextAsset =
-                            nextBroker === 'capital' || nextBroker === 'mt5'
-                              ? 'Forex'
-                              : fallbackAsset;
+                            nextBroker === 'mt5' ? 'Forex' : fallbackAsset;
                           const nextTimeFrame =
                             TIMEFRAME_OPTIONS_BY_BROKER[nextBroker][0].value;
                           const brokerSymbols =
                             SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[nextBroker] ??
                             {};
                           const symbols =
-                            nextBroker === 'capital'
-                              ? capitalMarkets
-                                  .filter(
-                                    (market) =>
-                                      String(
-                                        market.instrumentType || ''
-                                      ).toUpperCase() === 'CURRENCIES'
-                                  )
-                                  .map((market) => market.epic)
-                              : (brokerSymbols[nextAsset] ??
-                                SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws[
-                                  'Synthetic Indices'
-                                ] ??
-                                []);
+                            brokerSymbols[nextAsset] ??
+                            SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws[
+                              'Synthetic Indices'
+                            ] ??
+                            [];
 
                           setNewInstrument((prev) => ({
                             ...prev,
@@ -410,15 +359,8 @@ export function DashboardApp(d: TradingDashboard) {
                             maxRecoverySize:
                               nextBroker === 'deriv_ws'
                                 ? Math.max(35, prev.positionSize)
-                                : nextBroker === 'capital'
-                                  ? 100
-                                  : 0.01,
-                            positionSize:
-                              nextBroker === 'capital'
-                                ? 100
-                                : nextBroker === 'mt5'
-                                  ? 0.01
-                                  : 10,
+                                : 0.01,
+                            positionSize: nextBroker === 'mt5' ? 0.01 : 10,
                             mt5AccountId:
                               nextBroker === 'mt5'
                                 ? (mt5Accounts[0]?.id ?? null)
@@ -462,30 +404,11 @@ export function DashboardApp(d: TradingDashboard) {
                               newInstrumentBroker
                             ] ?? {};
                           const symbols =
-                            newInstrumentBroker === 'capital' || isMt5Broker
-                              ? capitalMarkets
-                                  .filter((market) => {
-                                    const type = String(
-                                      market.instrumentType || ''
-                                    ).toUpperCase();
-                                    if (nextAsset === 'Forex')
-                                      return type === 'CURRENCIES';
-                                    if (nextAsset === 'Commodities')
-                                      return type === 'COMMODITIES';
-                                    if (nextAsset === 'Indices')
-                                      return type === 'INDICES';
-                                    if (nextAsset === 'Stocks')
-                                      return type === 'SHARES';
-                                    if (nextAsset === 'Crypto')
-                                      return type === 'CRYPTOCURRENCIES';
-                                    return false;
-                                  })
-                                  .map((market) => market.epic)
-                              : (brokerSymbols[nextAsset] ??
-                                SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws[
-                                  'Synthetic Indices'
-                                ] ??
-                                []);
+                            brokerSymbols[nextAsset] ??
+                            SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws[
+                              'Synthetic Indices'
+                            ] ??
+                            [];
 
                           setNewInstrument((prev) => ({
                             ...prev,
@@ -557,11 +480,9 @@ export function DashboardApp(d: TradingDashboard) {
                       />
                       <NumberField
                         label={
-                          newInstrumentBroker === 'capital'
-                            ? 'Size (units)'
-                            : newInstrumentBroker === 'mt5'
-                              ? 'Volume (lots)'
-                              : 'Stake'
+                          newInstrumentBroker === 'mt5'
+                            ? 'Volume (lots)'
+                            : 'Stake'
                         }
                         value={newInstrument.positionSize}
                         onChange={(value) =>
@@ -658,7 +579,7 @@ export function DashboardApp(d: TradingDashboard) {
                         help={
                           newInstrumentBroker === 'mt5'
                             ? 'Maximum loss monitored by this server; the current MT5 bridge does not install a broker-side stop-loss.'
-                            : 'Maximum loss sent as a broker-side stop for new Deriv/Capital positions, with server monitoring as an additional check.'
+                            : 'Maximum loss sent as a broker-side stop for new Deriv positions, with server monitoring as an additional check.'
                         }
                         value={newInstrument.stopLossAmount ?? 0}
                         onChange={(value) =>
@@ -753,7 +674,6 @@ export function DashboardApp(d: TradingDashboard) {
                         })
                       )
                     }
-                    capitalMarkets={capitalMarkets}
                     onUpdateInstrument={async (
                       symbol,
                       brokerType,
@@ -780,16 +700,14 @@ export function DashboardApp(d: TradingDashboard) {
               <Panel
                 title='Broker credentials'
                 actions={
-                  tokenStatus?.configured ||
-                  tokenStatus?.capitalConfigured ||
-                  mt5Accounts.length > 0 ? (
+                  tokenStatus?.configured || mt5Accounts.length > 0 ? (
                     <span className='text-xs text-muted-foreground'>
                       Updated {formatDate(tokenStatus?.updatedAt)}
                     </span>
                   ) : null
                 }
               >
-                <div className='mb-5 grid gap-3 sm:grid-cols-2'>
+                <div className='mb-5 grid gap-3 sm:grid-cols-1'>
                   <div className='rounded-xl border border-border bg-background/40 p-3'>
                     <p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground'>
                       Deriv
@@ -800,20 +718,9 @@ export function DashboardApp(d: TradingDashboard) {
                         : 'Deriv not ready'}
                     </p>
                   </div>
-                  <div className='rounded-xl border border-border bg-background/40 p-3'>
-                    <p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground'>
-                      Capital API
-                    </p>
-                    <p className='mt-2 text-sm font-medium text-foreground'>
-                      Capital API configured
-                    </p>
-                    <p className='mt-1 text-[11px] text-muted-foreground'>
-                      Direct API broker path.
-                    </p>
-                  </div>
                 </div>
 
-                <div className='grid gap-6 lg:grid-cols-2'>
+                <div className='grid gap-6 lg:grid-cols-1'>
                   <div className='rounded-xl border border-border bg-background/40 p-4'>
                     <h3 className='mb-3 text-sm font-semibold text-foreground'>
                       Deriv
@@ -846,89 +753,6 @@ export function DashboardApp(d: TradingDashboard) {
                       {tokenStatus?.configured && (
                         <p className='text-xs text-muted-foreground'>
                           Stored token: ••••{tokenStatus.tokenLast4}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className='rounded-xl border border-border bg-background/40 p-4'>
-                    <h3 className='mb-3 text-sm font-semibold text-foreground'>
-                      Capital API
-                    </h3>
-                    <div className='mb-3 flex items-center gap-2'>
-                      <span
-                        className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
-                          tokenStatus?.capitalConfigured
-                            ? 'bg-emerald-500/15 text-emerald-300'
-                            : 'bg-muted text-muted-foreground'
-                        }`}
-                      >
-                        {tokenStatus?.capitalConfigured
-                          ? 'Configured'
-                          : 'Not configured'}
-                      </span>
-                    </div>
-                    <p className='text-sm text-muted-foreground'>
-                      Store Capital API credentials for the direct broker path.
-                      They are encrypted and stored per account.
-                    </p>
-                    <div className='mt-4 grid gap-3'>
-                      <input
-                        type='email'
-                        value={capitalCredentials.identifier}
-                        onChange={(e) =>
-                          setCapitalCredentials((prev) => ({
-                            ...prev,
-                            identifier: e.target.value,
-                          }))
-                        }
-                        placeholder='Capital identifier / email'
-                        className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
-                      />
-                      <input
-                        type='password'
-                        value={capitalCredentials.apiKey}
-                        onChange={(e) =>
-                          setCapitalCredentials((prev) => ({
-                            ...prev,
-                            apiKey: e.target.value,
-                          }))
-                        }
-                        placeholder='Capital API key'
-                        className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
-                      />
-                      <input
-                        type='password'
-                        value={capitalCredentials.password}
-                        onChange={(e) =>
-                          setCapitalCredentials((prev) => ({
-                            ...prev,
-                            password: e.target.value,
-                          }))
-                        }
-                        placeholder='Capital password / secret'
-                        className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
-                      />
-                      <select
-                        value={capitalCredentials.accountType}
-                        onChange={(e) =>
-                          setCapitalCredentials((prev) => ({
-                            ...prev,
-                            accountType: e.target.value,
-                          }))
-                        }
-                        className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
-                      >
-                        <option value='demo'>Demo</option>
-                        <option value='live'>Live</option>
-                      </select>
-                      {tokenStatus?.capitalConfigured && (
-                        <p className='text-xs text-muted-foreground'>
-                          Stored Capital key: ••••
-                          {tokenStatus.capitalApiKeyLast4}
-                          {tokenStatus.capitalAccountType
-                            ? ` • ${tokenStatus.capitalAccountType}`
-                            : ''}
                         </p>
                       )}
                     </div>
@@ -990,7 +814,7 @@ export function DashboardApp(d: TradingDashboard) {
                             label: e.target.value,
                           }))
                         }
-                        placeholder='Account label, e.g. Capital demo'
+                        placeholder='Account label, e.g. MT5 demo'
                         className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
                       />
                       <input
@@ -1026,7 +850,7 @@ export function DashboardApp(d: TradingDashboard) {
                             server: e.target.value,
                           }))
                         }
-                        placeholder='MT5 server, e.g. Capital.ComBah-Demo'
+                        placeholder='MT5 server, e.g. MetaTrader-Demo'
                         className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
                       />
                       <ButtonPrimary
@@ -1051,22 +875,12 @@ export function DashboardApp(d: TradingDashboard) {
                 <div className='mt-5 flex flex-wrap gap-2'>
                   <ButtonPrimary
                     disabled={
-                      (!tokenInput &&
-                        !capitalCredentials.apiKey &&
-                        !capitalCredentials.identifier &&
-                        !capitalCredentials.password) ||
+                      (!tokenInput && mt5Accounts.length === 0) ||
                       saveTokenMutation.isPending
                     }
                     onClick={() =>
                       saveTokenMutation.mutate({
                         derivToken: tokenInput.trim() || undefined,
-                        capitalApiKey:
-                          capitalCredentials.apiKey.trim() || undefined,
-                        capitalIdentifier:
-                          capitalCredentials.identifier.trim() || undefined,
-                        capitalPassword:
-                          capitalCredentials.password.trim() || undefined,
-                        capitalAccountType: capitalCredentials.accountType,
                       })
                     }
                   >
@@ -1076,9 +890,7 @@ export function DashboardApp(d: TradingDashboard) {
                   </ButtonPrimary>
                   <ButtonGhost
                     disabled={
-                      (!tokenStatus?.configured &&
-                        !tokenStatus?.capitalConfigured) ||
-                      deleteTokenMutation.isPending
+                      !tokenStatus?.configured || deleteTokenMutation.isPending
                     }
                     onClick={() => deleteTokenMutation.mutate()}
                   >
@@ -1296,9 +1108,7 @@ export function DashboardApp(d: TradingDashboard) {
                     setActivityPage(1);
                   }}
                   onBrokerChange={(value) => {
-                    setActivityBroker(
-                      value as '' | 'deriv_ws' | 'capital' | 'mt5'
-                    );
+                    setActivityBroker(value as '' | 'deriv_ws' | 'mt5');
                     setActivityPage(1);
                   }}
                   onTypeChange={(value) => {
@@ -1458,7 +1268,6 @@ export function DashboardApp(d: TradingDashboard) {
 }
 
 function formatBrokerLabel(brokerType?: string | null) {
-  if (brokerType === 'capital') return 'Capital';
   if (brokerType === 'mt5') return 'MT5';
   if (brokerType === 'deriv_ws') return 'Deriv';
   return 'Deriv';
@@ -1472,10 +1281,9 @@ function AnalyticsPanel({
   logSummary?: LogSummary;
 }) {
   const ls = logSummary;
-  const capitalLog = ls?.byBroker?.capital;
   const derivLog = ls?.byBroker?.deriv_ws;
   const mt5Log = ls?.byBroker?.mt5;
-  const brokerSummaryEntries = (['deriv_ws', 'capital', 'mt5'] as const).map(
+  const brokerSummaryEntries = (['deriv_ws', 'mt5'] as const).map(
     (brokerType) => {
       const broker = analytics?.byBroker?.find(
         (row) => row.brokerType === brokerType
@@ -1512,11 +1320,9 @@ function AnalyticsPanel({
                 <MiniStat
                   label='Open'
                   value={String(
-                    brokerType === 'capital'
-                      ? (capitalLog?.openTrades ?? 0)
-                      : brokerType === 'mt5'
-                        ? (mt5Log?.openTrades ?? 0)
-                        : (derivLog?.openTrades ?? 0)
+                    brokerType === 'mt5'
+                      ? (mt5Log?.openTrades ?? 0)
+                      : (derivLog?.openTrades ?? 0)
                   )}
                 />
               </div>
@@ -1526,18 +1332,10 @@ function AnalyticsPanel({
       </div>
 
       <div className='grid gap-2 sm:grid-cols-2 lg:grid-cols-3'>
-        <MiniStat
-          label='Capital trades'
-          value={String(capitalLog?.totalTrades ?? 0)}
-        />
         <MiniStat label='MT5 trades' value={String(mt5Log?.totalTrades ?? 0)} />
         <MiniStat
           label='Deriv trades'
           value={String(derivLog?.totalTrades ?? 0)}
-        />
-        <MiniStat
-          label='Capital open'
-          value={String(capitalLog?.openTrades ?? 0)}
         />
         <MiniStat label='MT5 open' value={String(mt5Log?.openTrades ?? 0)} />
         <MiniStat
@@ -1582,7 +1380,7 @@ function BrokerLatestTradesTables({
   setPage: (n: number) => void;
   total: number | null;
 }) {
-  const brokerOrder = ['mt5', 'capital', 'deriv_ws'] as const;
+  const brokerOrder = ['mt5', 'deriv_ws'] as const;
   const brokerRows = brokerOrder.map((brokerType) => ({
     brokerType,
     rows: (rows || []).filter((row) => row.brokerType === brokerType),
@@ -1696,7 +1494,7 @@ function BrokerPerInstrumentTables({
 }: {
   rows: AnalyticsSummary['bySymbol'];
 }) {
-  const brokerOrder = ['mt5', 'capital', 'deriv_ws'] as const;
+  const brokerOrder = ['mt5', 'deriv_ws'] as const;
   const brokerRows = brokerOrder.map((brokerType) => ({
     brokerType,
     rows: (rows || []).filter((row) => row.brokerType === brokerType),
@@ -1853,7 +1651,7 @@ function RecentActivityTable({
   pageSize: number;
   total: number;
   totalPages: number;
-  broker: '' | 'deriv_ws' | 'capital' | 'mt5';
+  broker: '' | 'deriv_ws' | 'mt5';
   type: string;
   loading: boolean;
   failed: boolean;
@@ -1888,7 +1686,6 @@ function RecentActivityTable({
             options={[
               { value: '', label: 'All brokers' },
               { value: 'deriv_ws', label: 'Deriv' },
-              { value: 'capital', label: 'Capital' },
               { value: 'mt5', label: 'MT5' },
             ]}
           />
@@ -1952,20 +1749,14 @@ function RecentActivityTable({
                   <td className='py-2.5'>
                     <span
                       className={`rounded px-2 py-1 text-[10px] font-semibold uppercase ${
-                        row.brokerType === 'capital'
-                          ? 'bg-emerald-500/15 text-emerald-300'
-                          : row.brokerType === 'mt5'
-                            ? 'bg-sky-500/15 text-sky-300'
-                            : 'bg-muted text-muted-foreground'
+                        row.brokerType === 'mt5'
+                          ? 'bg-sky-500/15 text-sky-300'
+                          : 'bg-muted text-muted-foreground'
                       }`}
                     >
                       {String(
                         row.brokerLabel ??
-                          (row.brokerType === 'capital'
-                            ? 'Capital.com'
-                            : row.brokerType === 'mt5'
-                              ? 'MT5'
-                              : 'Deriv')
+                          (row.brokerType === 'mt5' ? 'MT5' : 'Deriv')
                       )}
                     </span>
                   </td>

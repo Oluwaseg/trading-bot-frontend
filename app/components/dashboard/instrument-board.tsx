@@ -1,11 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import type {
-  CapitalMarket,
-  InstrumentConfig,
-  InstrumentState,
-} from '../../api-client';
+import { useState } from 'react';
+import type { InstrumentConfig, InstrumentState } from '../../api-client';
 import {
   ASSET_CLASS_OPTIONS,
   BROKER_OPTIONS,
@@ -31,7 +27,6 @@ export function InstrumentBoard({
   onUpdateInstrument,
   onGenerateWebhook,
   generatingWebhook,
-  capitalMarkets,
 }: {
   rows: InstrumentState[];
   meta: Array<{
@@ -60,7 +55,6 @@ export function InstrumentBoard({
   ) => Promise<void>;
   onGenerateWebhook: (instrumentId: string) => void;
   generatingWebhook: boolean;
-  capitalMarkets: CapitalMarket[];
 }) {
   if (rows.length === 0) {
     return (
@@ -112,7 +106,6 @@ export function InstrumentBoard({
             onGenerateWebhook(instrument.config.id || '')
           }
           generatingWebhook={generatingWebhook}
-          capitalMarkets={capitalMarkets}
         />
       ))}
     </div>
@@ -132,7 +125,6 @@ function InstrumentRow({
   onSaveEdit,
   onGenerateWebhook,
   generatingWebhook,
-  capitalMarkets,
 }: {
   instrument: InstrumentState;
   syncing: boolean;
@@ -146,15 +138,10 @@ function InstrumentRow({
   onSaveEdit: (updates: Partial<InstrumentConfig>) => Promise<void>;
   onGenerateWebhook: () => void;
   generatingWebhook: boolean;
-  capitalMarkets: CapitalMarket[];
 }) {
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [draft, setDraft] = useState<Partial<InstrumentConfig>>({});
-  const [trailSamples, setTrailSamples] = useState<{
-    contractId: string | null;
-    values: number[];
-  }>({ contractId: null, values: [] });
 
   const openEdit = () => {
     const c = instrument.config;
@@ -228,30 +215,14 @@ function InstrumentRow({
   };
 
   const open = instrument.openPosition;
-  useEffect(() => {
-    if (!open || open.profit == null || !Number.isFinite(Number(open.profit))) {
-      return;
-    }
-    const contractId = String(open.contract_id);
-    const currentProfit = Number(open.profit);
-    setTrailSamples((previous) => {
-      const values = previous.contractId === contractId ? previous.values : [];
-      if (values.at(-1) === currentProfit) return previous;
-      return {
-        contractId,
-        values: [...values, currentProfit].slice(-60),
-      };
-    });
-  }, [open?.contract_id, open?.profit]);
   const trend = instrument.signal?.state ?? '—';
   const signal = instrument.signal?.signal ?? '—';
   const rateLimited =
     !!errorMessage &&
     /rate limit|requests per second|too many requests|429/i.test(errorMessage);
   const marketClosed =
-    instrument.config.brokerType === 'capital' &&
-    (errorStatusCode === 423 ||
-      /market .*closed|trading hours/i.test(errorMessage || ''));
+    errorStatusCode === 423 ||
+    /market .*closed|trading hours/i.test(errorMessage || '');
   const strategyLabel =
     instrument.config.strategy === 'fixed_isolated_stake'
       ? 'Fixed Stake'
@@ -265,27 +236,13 @@ function InstrumentRow({
   const requestedEditAsset =
     draft.assetClass ?? instrument.config.assetClass ?? 'Synthetic Indices';
   const editAsset =
-    (editBroker === 'capital' || editBroker === 'mt5') &&
-    requestedEditAsset === 'Synthetic Indices'
+    editBroker === 'mt5' && requestedEditAsset === 'Synthetic Indices'
       ? 'Forex'
       : requestedEditAsset;
-  const capitalSymbols = capitalMarkets
-    .filter((market) => {
-      const type = String(market.instrumentType || '').toUpperCase();
-      if (editAsset === 'Forex') return type === 'CURRENCIES';
-      if (editAsset === 'Commodities') return type === 'COMMODITIES';
-      if (editAsset === 'Indices') return type === 'INDICES';
-      if (editAsset === 'Stocks') return type === 'SHARES';
-      if (editAsset === 'Crypto') return type === 'CRYPTOCURRENCIES';
-      return false;
-    })
-    .map((market) => market.epic);
   const editSymbols =
-    editBroker === 'capital'
-      ? capitalSymbols
-      : (SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[editBroker]?.[editAsset] ?? []);
+    SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[editBroker]?.[editAsset] ?? [];
   const editAssetOptions =
-    editBroker === 'capital' || editBroker === 'mt5'
+    editBroker === 'mt5'
       ? ASSET_CLASS_OPTIONS.filter(
           (option) => option.value !== 'Synthetic Indices'
         )
@@ -369,18 +326,12 @@ function InstrumentRow({
             <MiniStat label='Signal' value={signal} />
             <MiniStat
               label={
-                instrument.config.brokerType === 'capital'
-                  ? 'Size'
-                  : instrument.config.brokerType === 'mt5'
-                    ? 'Volume'
-                    : 'Stake'
+                instrument.config.brokerType === 'mt5' ? 'Volume' : 'Stake'
               }
               value={
-                instrument.config.brokerType === 'capital'
-                  ? `${instrument.config.positionSize} units`
-                  : instrument.config.brokerType === 'mt5'
-                    ? `${instrument.config.positionSize} lots`
-                    : `$${instrument.config.positionSize}`
+                instrument.config.brokerType === 'mt5'
+                  ? `${instrument.config.positionSize} lots`
+                  : `$${instrument.config.positionSize}`
               }
             />
             <MiniStat
@@ -394,14 +345,7 @@ function InstrumentRow({
                     : 'Standard'
               }
             />
-            {instrument.config.brokerType === 'capital' ? (
-              <MiniStat label='Sizing' value='Units' />
-            ) : (
-              <MiniStat
-                label='Lev.'
-                value={`${instrument.config.multiplier}x`}
-              />
-            )}
+            <MiniStat label='Lev.' value={`${instrument.config.multiplier}x`} />
             <MiniStat
               label='Risk settings'
               value={`${instrument.config.stopLossAmount ?? 0} / ${instrument.config.trailingStopDistanceAmount ?? 0} / ${instrument.config.trailingProfitGivebackAmount ?? 0}`}
@@ -414,13 +358,7 @@ function InstrumentRow({
                 <div className='min-w-0'>
                   <div className='flex flex-wrap items-baseline gap-x-3 gap-y-1'>
                     <span className='font-medium text-foreground'>
-                      Open: {open.signal}{' '}
-                      {instrument.config.brokerType === 'capital' && open.size
-                        ? `${open.size} units @ `
-                        : '@ '}
-                      {instrument.config.brokerType === 'capital'
-                        ? open.buy_price
-                        : `$${open.buy_price}`}
+                      Open: {open.signal} @ ${open.buy_price}
                     </span>
                     <span className='font-mono text-xs text-muted-foreground'>
                       #{open.contract_id}
@@ -445,7 +383,7 @@ function InstrumentRow({
                       ? ` · Trail closes at +${Number(open.trailingStopLevel).toFixed(2)}`
                       : ''}
                     {open.bid_price != null
-                      ? ` · value ${instrument.config.brokerType === 'capital' ? Number(open.bid_price).toFixed(5) : `$${Number(open.bid_price).toFixed(2)}`}`
+                      ? ` · value $${Number(open.bid_price).toFixed(2)}`
                       : ''}
                   </p>
                   {Number(instrument.config.trailingStopDistanceAmount) > 0 ? (
@@ -453,11 +391,6 @@ function InstrumentRow({
                       currentProfit={open.profit}
                       peakProfit={open.trailingPeakProfit}
                       stopLevel={open.trailingStopLevel}
-                      samples={
-                        trailSamples.contractId === String(open.contract_id)
-                          ? trailSamples.values
-                          : []
-                      }
                     />
                   ) : null}
                 </div>
@@ -532,43 +465,21 @@ function InstrumentRow({
                   InstrumentConfig['brokerType']
                 >;
                 const nextAsset =
-                  nextBroker === 'capital' || nextBroker === 'mt5'
-                    ? 'Forex'
-                    : 'Synthetic Indices';
+                  nextBroker === 'mt5' ? 'Forex' : 'Synthetic Indices';
                 const nextTimeFrame =
                   TIMEFRAME_OPTIONS_BY_BROKER[nextBroker][0].value;
                 const nextSymbols =
-                  nextBroker === 'capital'
-                    ? capitalMarkets
-                        .filter(
-                          (market) =>
-                            String(
-                              market.instrumentType || ''
-                            ).toUpperCase() === 'CURRENCIES'
-                        )
-                        .map((market) => market.epic)
-                    : (SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[nextBroker]?.[
-                        nextAsset
-                      ] ?? []);
+                  SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[nextBroker]?.[nextAsset] ??
+                  [];
                 setDraft((prev) => ({
                   ...prev,
                   brokerType: nextBroker,
                   assetClass: nextAsset,
                   symbol: nextSymbols[0] ?? prev.symbol,
                   timeFrame: nextTimeFrame,
-                  positionSize:
-                    nextBroker === 'capital'
-                      ? 100
-                      : nextBroker === 'mt5'
-                        ? 0.01
-                        : 10,
+                  positionSize: nextBroker === 'mt5' ? 0.01 : 10,
                   recoverySizePerCurrency: nextBroker === 'deriv_ws' ? 1 : 0,
-                  maxRecoverySize:
-                    nextBroker === 'deriv_ws'
-                      ? 35
-                      : nextBroker === 'capital'
-                        ? 100
-                        : 0.01,
+                  maxRecoverySize: nextBroker === 'deriv_ws' ? 35 : 0.01,
                 }));
               }}
               options={BROKER_OPTIONS.map((broker) => ({
@@ -585,27 +496,8 @@ function InstrumentRow({
                   InstrumentConfig['assetClass']
                 >;
                 const nextSymbols =
-                  editBroker === 'capital'
-                    ? capitalMarkets
-                        .filter((market) => {
-                          const type = String(
-                            market.instrumentType || ''
-                          ).toUpperCase();
-                          if (nextAsset === 'Forex')
-                            return type === 'CURRENCIES';
-                          if (nextAsset === 'Commodities')
-                            return type === 'COMMODITIES';
-                          if (nextAsset === 'Indices')
-                            return type === 'INDICES';
-                          if (nextAsset === 'Stocks') return type === 'SHARES';
-                          if (nextAsset === 'Crypto')
-                            return type === 'CRYPTOCURRENCIES';
-                          return false;
-                        })
-                        .map((market) => market.epic)
-                    : (SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[editBroker]?.[
-                        nextAsset
-                      ] ?? []);
+                  SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[editBroker]?.[nextAsset] ??
+                  [];
                 setDraft((prev) => ({
                   ...prev,
                   assetClass: nextAsset,
@@ -672,19 +564,11 @@ function InstrumentRow({
               }
             />
             <NumberField
-              label={
-                instrument.config.brokerType === 'capital'
-                  ? 'Size (units)'
-                  : editBroker === 'mt5'
-                    ? 'Volume (lots)'
-                    : 'Stake'
-              }
+              label={editBroker === 'mt5' ? 'Volume (lots)' : 'Stake'}
               help={
-                editBroker === 'capital'
-                  ? 'Starting Capital position size in broker units.'
-                  : editBroker === 'mt5'
-                    ? 'Starting MT5 trade volume in lots. Broker minimums and steps still apply.'
-                    : 'Starting Deriv stake amount in the account currency.'
+                editBroker === 'mt5'
+                  ? 'Starting MT5 trade volume in lots. Broker minimums and steps still apply.'
+                  : 'Starting Deriv stake amount in the account currency.'
               }
               value={draft.positionSize ?? 10}
               onChange={(value) =>
@@ -720,7 +604,7 @@ function InstrumentRow({
               <>
                 <NumberField
                   label='Native size per 1 account-currency loss'
-                  help='How many broker-native size units to add for each unit of realized account-currency loss. Capital uses units; MT5 uses lots; Deriv uses stake.'
+                  help='How many broker-native size units to add for each unit of realized account-currency loss. MT5 uses lots; Deriv uses stake.'
                   value={draft.recoverySizePerCurrency ?? 0}
                   onChange={(value) =>
                     setDraft((prev) => ({
@@ -739,10 +623,10 @@ function InstrumentRow({
                 />
               </>
             ) : null}
-            {editBroker !== 'capital' ? (
+            {editBroker === 'deriv_ws' ? (
               <NumberField
                 label='Multiplier'
-                help='Deriv multiplier setting for multiplier contracts. This does not change Capital units or MT5 lots.'
+                help='Deriv multiplier setting for multiplier contracts. This does not change MT5 lots.'
                 value={draft.multiplier ?? 100}
                 onChange={(value) =>
                   setDraft((prev) => ({ ...prev, multiplier: value }))
@@ -754,7 +638,7 @@ function InstrumentRow({
               help={
                 editBroker === 'mt5'
                   ? 'Maximum loss monitored by this server; the current MT5 bridge does not install a broker-side stop-loss.'
-                  : 'Maximum loss sent as a broker-side stop for new Deriv/Capital positions, with server monitoring as an additional check.'
+                  : 'Maximum loss sent as a broker-side stop for new Deriv positions, with server monitoring as an additional check.'
               }
               value={draft.stopLossAmount ?? 0}
               onChange={(value) =>
@@ -855,12 +739,10 @@ function ProfitTrailVisual({
   currentProfit,
   peakProfit,
   stopLevel,
-  samples,
 }: {
   currentProfit?: number | null;
   peakProfit?: number | null;
   stopLevel?: number | null;
-  samples: number[];
 }) {
   const current =
     currentProfit != null && Number.isFinite(Number(currentProfit))
@@ -883,107 +765,58 @@ function ProfitTrailVisual({
     );
   }
 
-  const values = [0, current, ...samples];
-  if (peak != null) values.push(peak);
-  if (stop != null) values.push(stop);
+  const safePeak = peak ?? current;
+  const safeStop = stop ?? current;
+  const values = [0, current, safePeak, safeStop];
   const rawMin = Math.min(...values);
   const rawMax = Math.max(...values);
   const padding = Math.max((rawMax - rawMin) * 0.12, 1);
   const scaleMin = rawMin - padding;
   const scaleMax = rawMax + padding;
   const span = scaleMax - scaleMin;
-  const chartWidth = 360;
-  const chartHeight = 92;
-  const chartTop = 8;
-  const chartBottom = 82;
-  const chartX = (index: number) =>
-    samples.length <= 1
-      ? chartWidth - 6
-      : 6 + (index / (samples.length - 1)) * (chartWidth - 12);
-  const chartY = (value: number) =>
-    chartBottom - ((value - scaleMin) / span) * (chartBottom - chartTop);
-  const points = samples
-    .map((value, index) => `${chartX(index)},${chartY(value)}`)
-    .join(' ');
+  const markerPosition = (value: number) =>
+    `${Math.min(100, Math.max(0, ((value - scaleMin) / span) * 100))}%`;
   const formatSigned = (value: number) =>
     `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
 
-  const stopReached = stop != null && current <= stop;
+  const stopReached = current <= safeStop;
 
   return (
     <div className='mt-3 max-w-xl rounded-md border border-border/70 bg-background/50 px-3 py-2'>
       <div className='flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]'>
         <span className='font-medium text-foreground'>
-          {stopReached
-            ? 'Stop threshold reached'
-            : peak == null
-              ? 'Waiting for bot peak'
-              : 'Trailing P/L history'}
+          {stopReached ? 'Stop threshold reached' : 'Trailing stop monitor'}
         </span>
-        <span className='text-muted-foreground'>
-          Recent samples · account currency
-        </span>
+        <span className='text-muted-foreground'>Account-currency P/L</span>
       </div>
-      <svg
-        viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-        className='mt-2 block h-24 w-full'
-        preserveAspectRatio='none'
-        role='img'
-        aria-label={`Recent observed P/L. Current ${formatSigned(current)}${peak == null ? '' : `, peak ${formatSigned(peak)}`}${stop == null ? '' : `, stop ${formatSigned(stop)}`}.`}
-      >
-        <line
-          x1='0'
-          x2={chartWidth}
-          y1={chartY(0)}
-          y2={chartY(0)}
-          stroke='currentColor'
-          strokeOpacity='0.35'
-          strokeDasharray='3 4'
+      <div className='relative mx-1 my-3 h-2 rounded-full bg-muted' role='img'>
+        <span
+          className='absolute -top-1 h-4 w-px bg-muted-foreground/70'
+          style={{ left: markerPosition(0) }}
+          aria-hidden='true'
         />
-        {stop != null ? (
-          <line
-            x1='0'
-            x2={chartWidth}
-            y1={chartY(stop)}
-            y2={chartY(stop)}
-            stroke='#fb7185'
-            strokeOpacity='0.85'
-            strokeDasharray='5 4'
-          />
-        ) : null}
-        {points ? (
-          <polyline
-            points={points}
-            fill='none'
-            stroke='#34d399'
-            strokeWidth='2.5'
-            strokeLinecap='round'
-            strokeLinejoin='round'
-            vectorEffect='non-scaling-stroke'
-          />
-        ) : null}
-        {samples.length > 0 ? (
-          <circle
-            cx={chartX(samples.length - 1)}
-            cy={chartY(current)}
-            r='4'
-            fill={stopReached ? '#fb7185' : '#34d399'}
-            stroke='var(--background)'
-            strokeWidth='2'
-            vectorEffect='non-scaling-stroke'
-          />
-        ) : null}
-      </svg>
+        <span
+          className='absolute -top-1 h-4 w-0.5 bg-rose-400'
+          style={{ left: markerPosition(safeStop) }}
+          aria-hidden='true'
+        />
+        <span
+          className='absolute -top-1 h-4 w-0.5 bg-cyan-300'
+          style={{ left: markerPosition(safePeak) }}
+          aria-hidden='true'
+        />
+        <span
+          className={`absolute -top-0.5 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-background ${stopReached ? 'bg-rose-400' : 'bg-emerald-300'}`}
+          style={{ left: markerPosition(current) }}
+          aria-hidden='true'
+        />
+      </div>
       <div className='flex flex-wrap gap-x-4 gap-y-1 text-[11px]'>
         <span className='text-emerald-200'>
           Current {formatSigned(current)}
         </span>
-        <span className='text-cyan-200'>
-          Bot peak {peak == null ? 'not recorded' : formatSigned(peak)}
-        </span>
-        <span className='text-rose-200'>
-          Stop {stop == null ? 'not available' : formatSigned(stop)}
-        </span>
+        <span className='text-cyan-200'>Peak {formatSigned(safePeak)}</span>
+        <span className='text-rose-200'>Stop {formatSigned(safeStop)}</span>
         <span className='text-muted-foreground'>Zero 0.00</span>
       </div>
     </div>

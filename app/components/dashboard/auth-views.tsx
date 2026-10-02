@@ -47,9 +47,9 @@ export function LoginScreen({
               Let the signal do the watching.
             </h1>
             <p className='mt-6 max-w-lg text-base leading-relaxed text-[#a9b9ad]'>
-              A focused command center for EMA strategies across Deriv and
-              Capital.com. Configure instruments, follow live positions, and act
-              when the market actually moves.
+              A focused command center for EMA strategies across Deriv and MT5.
+              Configure instruments, follow live positions, and act when the
+              market actually moves.
             </p>
 
             <div className='mt-10 grid max-w-lg grid-cols-3 gap-3 border-t border-[#28423a] pt-5'>

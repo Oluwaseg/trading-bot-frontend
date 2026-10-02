@@ -62,10 +62,6 @@ export interface TokenStatus {
   tokenLast4: string | null;
   createdAt: string | null;
   updatedAt: string | null;
-  capitalConfigured: boolean;
-  capitalApiKeyLast4: string | null;
-  capitalIdentifier: string | null;
-  capitalAccountType: string;
   preferredDerivAccountId?: string | null;
   runtimeConnected?: {
     connected: boolean;
@@ -73,7 +69,6 @@ export interface TokenStatus {
     accountType?: string | null;
   } | null;
   derivConnected: boolean;
-  capitalReadyForTesting?: boolean;
   mt5Configured?: boolean;
   brokerStatus?: {
     deriv: {
@@ -82,21 +77,11 @@ export interface TokenStatus {
       liveBridgeAvailable: boolean;
       readyForTesting: boolean;
     };
-    capital: {
-      configured: boolean;
-      status: 'configured' | 'not_configured';
-      liveBridgeAvailable: boolean;
-      readyForTesting: boolean;
-    };
   };
 }
 
 export interface BrokerCredentialPayload {
   derivToken?: string;
-  capitalApiKey?: string;
-  capitalIdentifier?: string;
-  capitalPassword?: string;
-  capitalAccountType?: string;
   preferredDerivAccountId?: string;
 }
 
@@ -110,14 +95,6 @@ export interface Mt5Account {
   status: string;
   createdAt?: string | null;
   updatedAt?: string | null;
-}
-
-export interface CapitalMarket {
-  epic: string;
-  symbol?: string;
-  instrumentName?: string;
-  instrumentType?: string;
-  marketStatus?: string;
 }
 
 export interface DerivAccountRow {
@@ -270,7 +247,7 @@ export type InstrumentRecoveryStrategy =
   | 'standard_accumulative_deficit'
   | 'aggressive_single_loss_multiplier';
 
-export type BrokerType = 'deriv_ws' | 'capital' | 'mt5';
+export type BrokerType = 'deriv_ws' | 'mt5';
 export type AssetClassType =
   | 'Synthetic Indices'
   | 'Forex'
@@ -472,8 +449,6 @@ export const tradingAPI = {
     }>('/admin/users', payload),
   getDerivAccounts: () =>
     apiClient.get<{ data: DerivAccountRow[] }>('/user/token/accounts'),
-  getCapitalMarkets: () =>
-    apiClient.get<{ markets: CapitalMarket[] }>('/user/capital/markets'),
   resetAdminUserPassword: (userId: string, password: string) =>
     apiClient.patch<{ success: boolean; message: string }>(
       `/admin/users/${userId}/password`,

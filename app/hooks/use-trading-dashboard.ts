@@ -5,7 +5,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import type { CapitalMarket, DerivAccountRow, Mt5Account } from '../api-client';
+import type { DerivAccountRow, Mt5Account } from '../api-client';
 import {
   ApiError,
   tradingAPI,
@@ -44,12 +44,6 @@ function useTradingDashboardInternal() {
   });
   const [tokenInput, setTokenInput] = useState('');
   const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
-  const [capitalCredentials, setCapitalCredentials] = useState({
-    apiKey: '',
-    identifier: '',
-    password: '',
-    accountType: 'demo',
-  });
   const [mt5AccountForm, setMt5AccountForm] = useState({
     label: '',
     login: '',
@@ -143,15 +137,6 @@ function useTradingDashboardInternal() {
     onError: (error) => setGlobalError(extractErrorMessage(error)),
   });
 
-  const capitalMarketsQuery = useQuery({
-    queryKey: ['dashboard', 'capital-markets'],
-    queryFn: async () => (await tradingAPI.getCapitalMarkets()).data.markets,
-    enabled: !!currentUser && !!tokenQuery.data?.capitalConfigured,
-    staleTime: 60000,
-    retry: false,
-    ...poll,
-  });
-
   const fetchDerivAccounts = async () => {
     const data = (await tradingAPI.getDerivAccounts()).data;
     const rows: DerivAccountRow[] = data?.data || [];
@@ -197,9 +182,9 @@ function useTradingDashboardInternal() {
 
   const [activityPage, setActivityPage] = useState(1);
   const [activityPageSize, setActivityPageSize] = useState(25);
-  const [activityBroker, setActivityBroker] = useState<
-    'deriv_ws' | 'capital' | 'mt5' | ''
-  >('');
+  const [activityBroker, setActivityBroker] = useState<'deriv_ws' | 'mt5' | ''>(
+    ''
+  );
   const [activityType, setActivityType] = useState('');
   const activityQuery = useQuery({
     queryKey: [
@@ -343,20 +328,10 @@ function useTradingDashboardInternal() {
   const saveTokenMutation = useMutation({
     mutationFn: async (payload: {
       derivToken?: string;
-      capitalApiKey?: string;
-      capitalIdentifier?: string;
-      capitalPassword?: string;
-      capitalAccountType?: string;
       preferredDerivAccountId?: string;
     }) => (await tradingAPI.saveToken(payload)).data,
     onSuccess: async (_data, variables) => {
       setTokenInput('');
-      setCapitalCredentials({
-        apiKey: '',
-        identifier: '',
-        password: '',
-        accountType: 'demo',
-      });
       setGlobalError(null);
       const preferredId = variables?.preferredDerivAccountId;
       if (preferredId) {
@@ -675,8 +650,6 @@ function useTradingDashboardInternal() {
     setTokenInput,
     webhookSecret,
     webhookSecretMutation,
-    capitalCredentials,
-    setCapitalCredentials,
     mt5AccountForm,
     setMt5AccountForm,
     mt5Accounts: (mt5AccountsQuery.data || []) as Mt5Account[],
@@ -724,7 +697,6 @@ function useTradingDashboardInternal() {
     setTradesPageSize,
     logSummary,
     tokenStatus,
-    capitalMarkets: (capitalMarketsQuery.data || []) as CapitalMarket[],
     adminUsers,
     instrumentPollMs,
     setInstrumentPollMs,
