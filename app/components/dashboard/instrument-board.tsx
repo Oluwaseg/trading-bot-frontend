@@ -24,14 +24,13 @@ import {
 export function InstrumentBoard({
   rows,
   meta,
-  busy,
+  busySymbols,
   onToggle,
   onClose,
   onRemove,
   onUpdateInstrument,
   onGenerateWebhook,
   generatingWebhook,
-  updatePendingSymbol,
   capitalMarkets,
 }: {
   rows: InstrumentState[];
@@ -41,17 +40,16 @@ export function InstrumentBoard({
     errorMessage?: string | null;
     errorStatusCode?: number | null;
   }>;
-  busy: boolean;
+  busySymbols: string[];
   onToggle: (symbol: string) => void;
   onClose: (symbol: string) => void;
-  onRemove: (symbol: string) => void;
+  onRemove: (symbol: string) => Promise<void>;
   onUpdateInstrument: (
     symbol: string,
     updates: Partial<InstrumentConfig>
   ) => Promise<void>;
   onGenerateWebhook: (instrumentId: string) => void;
   generatingWebhook: boolean;
-  updatePendingSymbol: string | null;
   capitalMarkets: CapitalMarket[];
 }) {
   if (rows.length === 0) {
@@ -72,8 +70,7 @@ export function InstrumentBoard({
           failed={meta[index]?.isError ?? false}
           errorMessage={meta[index]?.errorMessage ?? null}
           errorStatusCode={meta[index]?.errorStatusCode ?? null}
-          busy={busy}
-          updatePending={updatePendingSymbol === instrument.symbol}
+          busy={busySymbols.includes(instrument.symbol)}
           onToggle={() => onToggle(instrument.symbol)}
           onClose={() => onClose(instrument.symbol)}
           onRemove={() => onRemove(instrument.symbol)}
@@ -98,7 +95,6 @@ function InstrumentRow({
   errorMessage,
   errorStatusCode,
   busy,
-  updatePending,
   onToggle,
   onClose,
   onRemove,
@@ -113,16 +109,16 @@ function InstrumentRow({
   errorMessage: string | null;
   errorStatusCode: number | null;
   busy: boolean;
-  updatePending: boolean;
   onToggle: () => void;
   onClose: () => void;
-  onRemove: () => void;
+  onRemove: () => Promise<void>;
   onSaveEdit: (updates: Partial<InstrumentConfig>) => Promise<void>;
   onGenerateWebhook: () => void;
   generatingWebhook: boolean;
   capitalMarkets: CapitalMarket[];
 }) {
   const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [draft, setDraft] = useState<Partial<InstrumentConfig>>({});
   const [trailSamples, setTrailSamples] = useState<{
     contractId: string | null;
@@ -178,14 +174,13 @@ function InstrumentRow({
         historyDepth: draft.historyDepth,
         positionSize: draft.positionSize,
         strategy: draft.strategy ?? 'fixed_isolated_stake',
-        recoverySizePerCurrency:
-          draft.recoverySizePerCurrency ??
-          (draft.brokerType === 'deriv_ws' ? 1 : 0),
-        maxRecoverySize:
-          draft.maxRecoverySize ??
-          (draft.brokerType === 'deriv_ws'
-            ? Math.max(35, Number(draft.positionSize ?? 10))
-            : draft.positionSize),
+        ...((draft.strategy ?? 'fixed_isolated_stake') !==
+        'fixed_isolated_stake'
+          ? {
+              recoverySizePerCurrency: draft.recoverySizePerCurrency ?? 0,
+              maxRecoverySize: draft.maxRecoverySize ?? draft.positionSize,
+            }
+          : {}),
         multiplier: draft.multiplier,
         stopLossAmount: draft.stopLossAmount,
         takeProfitAmount: 0,
@@ -437,7 +432,7 @@ function InstrumentRow({
                 </div>
                 <ButtonPrimary
                   className='bg-destructive text-destructive-foreground hover:opacity-90 sm:shrink-0'
-                  disabled={busy || updatePending}
+                  disabled={busy}
                   onClick={onClose}
                 >
                   Sell / close
@@ -452,7 +447,7 @@ function InstrumentRow({
         <div className='flex shrink-0 flex-wrap gap-2 lg:flex-col lg:items-stretch'>
           <ButtonGhost
             className='lg:min-w-[7rem]'
-            disabled={busy || updatePending}
+            disabled={busy}
             onClick={onToggle}
           >
             {instrument.config.enabled ? 'Pause' : 'Resume'}
@@ -469,22 +464,22 @@ function InstrumentRow({
           ) : null}
           <ButtonGhost
             className='lg:min-w-[7rem]'
-            disabled={busy || updatePending || editing}
+            disabled={busy || editing}
             onClick={openEdit}
           >
             Edit
           </ButtonGhost>
           <ButtonPrimary
             className='bg-destructive text-destructive-foreground hover:opacity-90 lg:min-w-[7rem]'
-            disabled={busy || updatePending || !open}
+            disabled={busy || !open}
             onClick={onClose}
           >
             {open ? 'Sell / close' : 'No position'}
           </ButtonPrimary>
           <ButtonDangerOutline
             className='lg:min-w-[7rem]'
-            disabled={busy || updatePending}
-            onClick={onRemove}
+            disabled={busy}
+            onClick={() => setConfirmDelete(true)}
           >
             Remove
           </ButtonDangerOutline>
@@ -725,7 +720,11 @@ function InstrumentRow({
             ) : null}
             <NumberField
               label='Hard loss limit (account currency, 0=off)'
-              help='Independent maximum loss. For example, 10 attempts a close at -10 account-currency P/L. If another stop is tighter, that one can trigger first.'
+              help={
+                editBroker === 'mt5'
+                  ? 'Maximum loss monitored by this server; the current MT5 bridge does not install a broker-side stop-loss.'
+                  : 'Maximum loss sent as a broker-side stop for new Deriv/Capital positions, with server monitoring as an additional check.'
+              }
               value={draft.stopLossAmount ?? 0}
               onChange={(value) =>
                 setDraft((prev) => ({ ...prev, stopLossAmount: value }))
@@ -733,7 +732,7 @@ function InstrumentRow({
             />
             <NumberField
               label='Trailing stop from entry (distance, 0=off)'
-              help='Starts at entry with this much downside room, then follows the best observed P/L by the same distance. A value of 5 starts at -5; after reaching +20, the stop line is +15.'
+              help='Server-managed trailing exit. A value of 5 starts at -5 P/L and trails the best observed P/L by 5. It can fill beyond its line if price moves quickly.'
               value={draft.trailingStopDistanceAmount ?? 0}
               onChange={(value) =>
                 setDraft((prev) => ({
@@ -766,15 +765,57 @@ function InstrumentRow({
             />
           </div>
           <div className='mt-4 flex flex-wrap gap-2'>
-            <ButtonPrimary disabled={updatePending} onClick={submitEdit}>
-              {updatePending ? 'Saving…' : 'Save changes'}
+            <ButtonPrimary disabled={busy} onClick={submitEdit}>
+              {busy ? 'Saving…' : 'Save changes'}
             </ButtonPrimary>
-            <ButtonGhost disabled={updatePending} onClick={cancelEdit}>
+            <ButtonGhost disabled={busy} onClick={cancelEdit}>
               Cancel
             </ButtonGhost>
           </div>
         </div>
       )}
+      {confirmDelete ? (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4'>
+          <div
+            role='dialog'
+            aria-modal='true'
+            aria-labelledby={`delete-instrument-title-${instrument.config.id ?? instrument.symbol}`}
+            className='w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-xl'
+          >
+            <h3
+              id={`delete-instrument-title-${instrument.config.id ?? instrument.symbol}`}
+              className='text-base font-semibold text-foreground'
+            >
+              Delete {instrument.symbol}?
+            </h3>
+            <p className='mt-2 text-sm text-muted-foreground'>
+              This removes the instrument from automated monitoring. This action
+              cannot be undone.
+              {open
+                ? ' The open broker position will not be closed and will no longer be managed by this instrument.'
+                : ''}
+            </p>
+            <div className='mt-5 flex justify-end gap-2'>
+              <ButtonGhost
+                disabled={busy}
+                onClick={() => setConfirmDelete(false)}
+              >
+                Cancel
+              </ButtonGhost>
+              <ButtonDangerOutline
+                disabled={busy}
+                onClick={() => {
+                  void onRemove()
+                    .then(() => setConfirmDelete(false))
+                    .catch(() => undefined);
+                }}
+              >
+                {busy ? 'Deleting…' : 'Delete instrument'}
+              </ButtonDangerOutline>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -38,6 +38,9 @@ export function DashboardApp(d: TradingDashboard) {
   const [section, setSection] = useState<MainSection>('overview');
   const [showDerivAccountsModal, setShowDerivAccountsModal] = useState(false);
   const [isCheckingAccounts, setIsCheckingAccounts] = useState(false);
+  const [pendingInstrumentActions, setPendingInstrumentActions] = useState<
+    Record<string, boolean>
+  >({});
   const {
     currentUser,
     isAdmin,
@@ -77,6 +80,17 @@ export function DashboardApp(d: TradingDashboard) {
     analytics,
     logSummary,
     logs,
+    activity,
+    activityLoading,
+    activityError,
+    activityPage,
+    setActivityPage,
+    activityPageSize,
+    setActivityPageSize,
+    activityBroker,
+    setActivityBroker,
+    activityType,
+    setActivityType,
     activeInstrumentCount,
     userCount,
     createUserForm,
@@ -89,10 +103,21 @@ export function DashboardApp(d: TradingDashboard) {
     fetchDerivAccounts,
   } = d;
 
-  const busyInstrument =
-    toggleInstrumentMutation.isPending ||
-    closePositionMutation.isPending ||
-    removeInstrumentMutation.isPending;
+  const runInstrumentAction = async (
+    symbol: string,
+    action: () => Promise<unknown>
+  ) => {
+    setPendingInstrumentActions((current) => ({ ...current, [symbol]: true }));
+    try {
+      await action();
+    } finally {
+      setPendingInstrumentActions((current) => {
+        const next = { ...current };
+        delete next[symbol];
+        return next;
+      });
+    }
+  };
 
   const capitalOpenPositionCount = instrumentStates.filter(
     (instrument) =>
@@ -625,6 +650,11 @@ export function DashboardApp(d: TradingDashboard) {
                       ) : null}
                       <NumberField
                         label='Hard loss limit (account currency, 0=off)'
+                        help={
+                          newInstrumentBroker === 'mt5'
+                            ? 'Maximum loss monitored by this server; the current MT5 bridge does not install a broker-side stop-loss.'
+                            : 'Maximum loss sent as a broker-side stop for new Deriv/Capital positions, with server monitoring as an additional check.'
+                        }
                         value={newInstrument.stopLossAmount ?? 0}
                         onChange={(value) =>
                           setNewInstrument((prev) => ({
@@ -635,6 +665,7 @@ export function DashboardApp(d: TradingDashboard) {
                       />
                       <NumberField
                         label='Trailing stop from entry (distance, 0=off)'
+                        help='Server-managed trailing exit. A value of 5 starts at -5 P/L and trails the best observed P/L by 5. It can fill beyond its line if price moves quickly.'
                         value={newInstrument.trailingStopDistanceAmount ?? 0}
                         onChange={(value) =>
                           setNewInstrument((prev) => ({
@@ -672,9 +703,14 @@ export function DashboardApp(d: TradingDashboard) {
                             addInstrumentMutation.isPending ||
                             (isMt5Broker && !newInstrument.mt5AccountId)
                           }
-                          onClick={() =>
-                            addInstrumentMutation.mutate(newInstrument)
-                          }
+                          onClick={() => {
+                            const payload = { ...newInstrument };
+                            if (payload.strategy === 'fixed_isolated_stake') {
+                              delete payload.recoverySizePerCurrency;
+                              delete payload.maxRecoverySize;
+                            }
+                            addInstrumentMutation.mutate(payload);
+                          }}
                         >
                           {addInstrumentMutation.isPending
                             ? 'Saving…'
@@ -687,33 +723,38 @@ export function DashboardApp(d: TradingDashboard) {
                   <InstrumentBoard
                     rows={instrumentStates}
                     meta={instrumentStateMeta}
-                    busy={busyInstrument}
+                    busySymbols={Object.keys(pendingInstrumentActions)}
                     onToggle={(symbol) =>
-                      toggleInstrumentMutation.mutate(symbol)
+                      runInstrumentAction(symbol, () =>
+                        toggleInstrumentMutation.mutateAsync(symbol)
+                      )
                     }
-                    onClose={(symbol) => closePositionMutation.mutate(symbol)}
+                    onClose={(symbol) =>
+                      runInstrumentAction(symbol, () =>
+                        closePositionMutation.mutateAsync(symbol)
+                      )
+                    }
                     onRemove={(symbol) =>
-                      removeInstrumentMutation.mutate(symbol)
+                      runInstrumentAction(symbol, () =>
+                        removeInstrumentMutation.mutateAsync(symbol)
+                      )
                     }
                     capitalMarkets={capitalMarkets}
                     onUpdateInstrument={async (
                       symbol,
                       updates
                     ): Promise<void> => {
-                      await updateInstrumentMutation.mutateAsync({
-                        symbol,
-                        updates,
-                      });
+                      await runInstrumentAction(symbol, () =>
+                        updateInstrumentMutation.mutateAsync({
+                          symbol,
+                          updates,
+                        })
+                      );
                     }}
                     onGenerateWebhook={(instrumentId) =>
                       generateWebhookMutation.mutate(instrumentId)
                     }
                     generatingWebhook={generateWebhookMutation.isPending}
-                    updatePendingSymbol={
-                      updateInstrumentMutation.isPending
-                        ? (updateInstrumentMutation.variables?.symbol ?? null)
-                        : null
-                    }
                   />
                 </Panel>
               </>
@@ -1222,8 +1263,33 @@ export function DashboardApp(d: TradingDashboard) {
             )}
 
             {section === 'activity' && (
-              <Panel title='Recent events'>
-                <RecentActivityTable rows={logs} />
+              <Panel title='Activity'>
+                <RecentActivityTable
+                  rows={activity?.items || []}
+                  page={activityPage}
+                  pageSize={activityPageSize}
+                  total={activity?.total ?? 0}
+                  totalPages={activity?.totalPages ?? 0}
+                  broker={activityBroker}
+                  type={activityType}
+                  loading={activityLoading}
+                  failed={activityError}
+                  onPageChange={setActivityPage}
+                  onPageSizeChange={(value) => {
+                    setActivityPageSize(value);
+                    setActivityPage(1);
+                  }}
+                  onBrokerChange={(value) => {
+                    setActivityBroker(
+                      value as '' | 'deriv_ws' | 'capital' | 'mt5'
+                    );
+                    setActivityPage(1);
+                  }}
+                  onTypeChange={(value) => {
+                    setActivityType(value);
+                    setActivityPage(1);
+                  }}
+                />
               </Panel>
             )}
 
@@ -1751,68 +1817,188 @@ function PerInstrumentTable({ rows }: { rows: AnalyticsSummary['bySymbol'] }) {
   );
 }
 
-function RecentActivityTable({ rows }: { rows: LogEntry[] }) {
+function RecentActivityTable({
+  rows,
+  page,
+  pageSize,
+  total,
+  totalPages,
+  broker,
+  type,
+  loading,
+  failed,
+  onPageChange,
+  onPageSizeChange,
+  onBrokerChange,
+  onTypeChange,
+}: {
+  rows: LogEntry[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  broker: '' | 'deriv_ws' | 'capital' | 'mt5';
+  type: string;
+  loading: boolean;
+  failed: boolean;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+  onBrokerChange: (broker: string) => void;
+  onTypeChange: (type: string) => void;
+}) {
   const [selectedRow, setSelectedRow] = useState<LogEntry | null>(null);
 
-  if (rows.length === 0) {
-    return <p className='text-sm text-muted-foreground'>No recent activity.</p>;
-  }
+  const eventTypes = [
+    'signal_decision',
+    'order_attempt',
+    'order_result',
+    'order_error',
+    'auto_trade',
+    'auto_close',
+    'manual_close',
+    'close_all',
+  ];
+  const firstRow = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const lastRow = Math.min(page * pageSize, total);
+
   return (
-    <div className='overflow-x-auto'>
-      <table className='w-full text-left text-sm'>
-        <thead className='text-xs text-muted-foreground'>
-          <tr>
-            <th className='pb-2 font-medium'>Type</th>
-            <th className='pb-2 font-medium'>Broker</th>
-            <th className='pb-2 font-medium'>Time</th>
-            <th className='pb-2 font-medium'>Details</th>
-          </tr>
-        </thead>
-        <tbody className='divide-y divide-border'>
-          {rows.slice(0, 16).map((row) => (
-            <tr key={row._id}>
-              <td className='py-2.5'>{row.type}</td>
-              <td className='py-2.5'>
-                <span
-                  className={`rounded px-2 py-1 text-[10px] font-semibold uppercase ${
-                    row.brokerType === 'capital'
-                      ? 'bg-emerald-500/15 text-emerald-300'
-                      : row.brokerType === 'mt5'
-                        ? 'bg-sky-500/15 text-sky-300'
-                        : 'bg-muted text-muted-foreground'
-                  }`}
-                >
-                  {String(
-                    row.brokerLabel ??
-                      (row.brokerType === 'capital'
-                        ? 'Capital.com'
-                        : row.brokerType === 'mt5'
-                          ? 'MT5'
-                          : 'Deriv')
-                  )}
-                </span>
-              </td>
-              <td className='py-2.5 text-muted-foreground'>
-                {formatDate(row.createdAt)}
-              </td>
-              <td className='max-w-md py-2.5'>
-                <div className='flex items-center justify-between gap-3'>
-                  <div className='min-w-0 truncate text-xs text-muted-foreground'>
-                    {activitySummary(row)}
-                  </div>
-                  <button
-                    type='button'
-                    onClick={() => setSelectedRow(row)}
-                    className='shrink-0 rounded-md border border-border px-2 py-1 text-xs text-foreground transition hover:bg-muted'
-                  >
-                    View details
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className='space-y-4'>
+      <div className='flex flex-wrap items-end gap-3'>
+        <div className='w-full sm:w-48'>
+          <SelectField
+            label='Broker'
+            value={broker}
+            onChange={onBrokerChange}
+            options={[
+              { value: '', label: 'All brokers' },
+              { value: 'deriv_ws', label: 'Deriv' },
+              { value: 'capital', label: 'Capital' },
+              { value: 'mt5', label: 'MT5' },
+            ]}
+          />
+        </div>
+        <div className='w-full sm:w-56'>
+          <SelectField
+            label='Event type'
+            value={type}
+            onChange={onTypeChange}
+            options={[
+              { value: '', label: 'All event types' },
+              ...eventTypes.map((eventType) => ({
+                value: eventType,
+                label: eventType.replaceAll('_', ' '),
+              })),
+            ]}
+          />
+        </div>
+        <div className='w-32'>
+          <SelectField
+            label='Rows per page'
+            value={String(pageSize)}
+            onChange={(value) => onPageSizeChange(Number(value))}
+            options={[25, 50, 100].map((size) => ({
+              value: String(size),
+              label: String(size),
+            }))}
+          />
+        </div>
+        <span className='pb-2.5 text-xs text-muted-foreground'>
+          {loading ? 'Updating… ' : ''}
+          {failed
+            ? 'Could not load activity.'
+            : `${firstRow}–${lastRow} of ${total}`}
+        </span>
+      </div>
+
+      {rows.length === 0 ? (
+        <p className='text-sm text-muted-foreground'>
+          {failed
+            ? 'Activity could not be loaded.'
+            : 'No activity matches these filters.'}
+        </p>
+      ) : null}
+
+      {rows.length > 0 ? (
+        <div className='overflow-x-auto'>
+          <table className='w-full text-left text-sm'>
+            <thead className='text-xs text-muted-foreground'>
+              <tr>
+                <th className='pb-2 font-medium'>Type</th>
+                <th className='pb-2 font-medium'>Broker</th>
+                <th className='pb-2 font-medium'>Time</th>
+                <th className='pb-2 font-medium'>Details</th>
+              </tr>
+            </thead>
+            <tbody className='divide-y divide-border'>
+              {rows.map((row) => (
+                <tr key={row._id}>
+                  <td className='py-2.5'>{row.type}</td>
+                  <td className='py-2.5'>
+                    <span
+                      className={`rounded px-2 py-1 text-[10px] font-semibold uppercase ${
+                        row.brokerType === 'capital'
+                          ? 'bg-emerald-500/15 text-emerald-300'
+                          : row.brokerType === 'mt5'
+                            ? 'bg-sky-500/15 text-sky-300'
+                            : 'bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      {String(
+                        row.brokerLabel ??
+                          (row.brokerType === 'capital'
+                            ? 'Capital.com'
+                            : row.brokerType === 'mt5'
+                              ? 'MT5'
+                              : 'Deriv')
+                      )}
+                    </span>
+                  </td>
+                  <td className='py-2.5 text-muted-foreground'>
+                    {formatDate(row.createdAt)}
+                  </td>
+                  <td className='max-w-md py-2.5'>
+                    <div className='flex items-center justify-between gap-3'>
+                      <div className='min-w-0 truncate text-xs text-muted-foreground'>
+                        {activitySummary(row)}
+                      </div>
+                      <button
+                        type='button'
+                        onClick={() => setSelectedRow(row)}
+                        className='shrink-0 rounded-md border border-border px-2 py-1 text-xs text-foreground transition hover:bg-muted'
+                      >
+                        View details
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      <div className='flex items-center justify-between gap-3 border-t border-border pt-3'>
+        <span className='text-xs text-muted-foreground'>
+          Page {totalPages === 0 ? 0 : page} of {totalPages}
+        </span>
+        <div className='flex gap-2'>
+          <ButtonGhost
+            disabled={page <= 1 || loading}
+            onClick={() => onPageChange(page - 1)}
+            className='px-3 py-1.5 text-xs'
+          >
+            Previous
+          </ButtonGhost>
+          <ButtonGhost
+            disabled={page >= totalPages || loading || totalPages === 0}
+            onClick={() => onPageChange(page + 1)}
+            className='px-3 py-1.5 text-xs'
+          >
+            Next
+          </ButtonGhost>
+        </div>
+      </div>
+
       {selectedRow && (
         <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4'>
           <div className='flex max-h-[85vh] w-full max-w-3xl flex-col rounded-xl border border-border bg-card shadow-xl'>

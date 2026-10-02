@@ -157,6 +157,7 @@ export interface HealthResponse {
     totalInstruments: number;
     activeInstruments: number;
     monitoringIntervalMs: number;
+    riskMonitoringIntervalMs?: number;
   };
 }
 
@@ -165,6 +166,18 @@ export interface LogEntry {
   type: string;
   createdAt: string;
   [key: string]: unknown;
+}
+
+export interface ActivityPage {
+  items: LogEntry[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  filters: {
+    broker: BrokerType | null;
+    type: string | null;
+  };
 }
 
 export interface LogSummary {
@@ -360,6 +373,15 @@ export const tradingAPI = {
 
   getHealth: () => apiClient.get<HealthResponse>('/health'),
   getLogs: (limit = 20) => apiClient.get<LogEntry[]>(`/logs?limit=${limit}`),
+  getActivity: (params: {
+    page: number;
+    pageSize: number;
+    broker?: BrokerType | '';
+    type?: string;
+  }) =>
+    apiClient.get<ActivityPage>('/logs/activity', {
+      params,
+    }),
   getLogsSummary: () => apiClient.get<LogSummary>('/logs/summary'),
   getAnalyticsSummary: (opts?: {
     limit?: number;

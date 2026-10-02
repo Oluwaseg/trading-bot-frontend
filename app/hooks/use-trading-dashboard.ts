@@ -195,6 +195,36 @@ function useTradingDashboardInternal() {
   const [tradesPage, setTradesPage] = useState<number>(1);
   const [tradesPageSize, setTradesPageSize] = useState<number>(14);
 
+  const [activityPage, setActivityPage] = useState(1);
+  const [activityPageSize, setActivityPageSize] = useState(25);
+  const [activityBroker, setActivityBroker] = useState<
+    'deriv_ws' | 'capital' | 'mt5' | ''
+  >('');
+  const [activityType, setActivityType] = useState('');
+  const activityQuery = useQuery({
+    queryKey: [
+      'dashboard',
+      'activity',
+      activityPage,
+      activityPageSize,
+      activityBroker,
+      activityType,
+    ],
+    queryFn: async () =>
+      (
+        await tradingAPI.getActivity({
+          page: activityPage,
+          pageSize: activityPageSize,
+          broker: activityBroker,
+          type: activityType,
+        })
+      ).data,
+    enabled: !!currentUser,
+    refetchInterval: 5000,
+    placeholderData: (previousData) => previousData,
+    ...poll,
+  });
+
   const analyticsQueryWithPage = useQuery({
     queryKey: ['dashboard', 'analytics', tradesPage, tradesPageSize],
     queryFn: async () =>
@@ -674,6 +704,17 @@ function useTradingDashboardInternal() {
     userCount,
     health,
     logs,
+    activity: activityQuery.data,
+    activityLoading: activityQuery.isFetching,
+    activityError: activityQuery.isError,
+    activityPage,
+    setActivityPage,
+    activityPageSize,
+    setActivityPageSize,
+    activityBroker,
+    setActivityBroker,
+    activityType,
+    setActivityType,
     analytics,
     tradesPage,
     setTradesPage,
