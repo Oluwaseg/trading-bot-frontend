@@ -436,19 +436,18 @@ function useTradingDashboardInternal() {
   const updateInstrumentMutation = useMutation({
     mutationFn: async ({
       symbol,
+      brokerType,
       updates,
     }: {
       symbol: string;
+      brokerType: InstrumentConfig['brokerType'];
       updates: Partial<InstrumentConfig>;
     }) => {
-      const instrument = (instrumentsQuery.data || []).find(
-        (item) => item.symbol === symbol
-      );
       return (
         await tradingAPI.updateInstrument(
           symbol,
           updates,
-          instrument?.brokerType ?? 'deriv_ws'
+          brokerType ?? 'deriv_ws'
         )
       ).data;
     },
@@ -473,15 +472,15 @@ function useTradingDashboardInternal() {
   });
 
   const toggleInstrumentMutation = useMutation({
-    mutationFn: async (symbol: string) => {
-      const instrument = (instrumentsQuery.data || []).find(
-        (item) => item.symbol === symbol
-      );
+    mutationFn: async ({
+      symbol,
+      brokerType,
+    }: {
+      symbol: string;
+      brokerType: InstrumentConfig['brokerType'];
+    }) => {
       return (
-        await tradingAPI.toggleInstrument(
-          symbol,
-          instrument?.brokerType ?? 'deriv_ws'
-        )
+        await tradingAPI.toggleInstrument(symbol, brokerType ?? 'deriv_ws')
       ).data;
     },
     onSuccess: async () => {
@@ -502,14 +501,17 @@ function useTradingDashboardInternal() {
   });
 
   const closePositionMutation = useMutation({
-    mutationFn: async (symbol: string) => {
-      const instrument = (instrumentsQuery.data || []).find(
-        (item) => item.symbol === symbol
-      );
+    mutationFn: async ({
+      symbol,
+      brokerType,
+    }: {
+      symbol: string;
+      brokerType: InstrumentConfig['brokerType'];
+    }) => {
       return (
         await tradingAPI.closeInstrumentPosition(
           symbol,
-          instrument?.brokerType ?? 'deriv_ws'
+          brokerType ?? 'deriv_ws'
         )
       ).data;
     },
@@ -533,15 +535,15 @@ function useTradingDashboardInternal() {
   });
 
   const removeInstrumentMutation = useMutation({
-    mutationFn: async (symbol: string) => {
-      const instrument = (instrumentsQuery.data || []).find(
-        (item) => item.symbol === symbol
-      );
+    mutationFn: async ({
+      symbol,
+      brokerType,
+    }: {
+      symbol: string;
+      brokerType: InstrumentConfig['brokerType'];
+    }) => {
       return (
-        await tradingAPI.removeInstrument(
-          symbol,
-          instrument?.brokerType ?? 'deriv_ws'
-        )
+        await tradingAPI.removeInstrument(symbol, brokerType ?? 'deriv_ws')
       ).data;
     },
     onSuccess: async () => {

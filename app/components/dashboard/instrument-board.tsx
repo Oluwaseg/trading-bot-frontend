@@ -41,11 +41,21 @@ export function InstrumentBoard({
     errorStatusCode?: number | null;
   }>;
   busySymbols: string[];
-  onToggle: (symbol: string) => void;
-  onClose: (symbol: string) => void;
-  onRemove: (symbol: string) => Promise<void>;
+  onToggle: (
+    symbol: string,
+    brokerType: NonNullable<InstrumentConfig['brokerType']>
+  ) => void;
+  onClose: (
+    symbol: string,
+    brokerType: NonNullable<InstrumentConfig['brokerType']>
+  ) => void;
+  onRemove: (
+    symbol: string,
+    brokerType: NonNullable<InstrumentConfig['brokerType']>
+  ) => Promise<void>;
   onUpdateInstrument: (
     symbol: string,
+    brokerType: NonNullable<InstrumentConfig['brokerType']>,
     updates: Partial<InstrumentConfig>
   ) => Promise<void>;
   onGenerateWebhook: (instrumentId: string) => void;
@@ -64,18 +74,39 @@ export function InstrumentBoard({
     <div className='space-y-3'>
       {rows.map((instrument, index) => (
         <InstrumentRow
-          key={instrument.symbol}
+          key={`${instrument.config.brokerType ?? 'deriv_ws'}:${instrument.symbol}`}
           instrument={instrument}
           syncing={meta[index]?.isFetching ?? false}
           failed={meta[index]?.isError ?? false}
           errorMessage={meta[index]?.errorMessage ?? null}
           errorStatusCode={meta[index]?.errorStatusCode ?? null}
-          busy={busySymbols.includes(instrument.symbol)}
-          onToggle={() => onToggle(instrument.symbol)}
-          onClose={() => onClose(instrument.symbol)}
-          onRemove={() => onRemove(instrument.symbol)}
+          busy={busySymbols.includes(
+            `${instrument.config.brokerType ?? 'deriv_ws'}:${instrument.symbol}`
+          )}
+          onToggle={() =>
+            onToggle(
+              instrument.symbol,
+              instrument.config.brokerType ?? 'deriv_ws'
+            )
+          }
+          onClose={() =>
+            onClose(
+              instrument.symbol,
+              instrument.config.brokerType ?? 'deriv_ws'
+            )
+          }
+          onRemove={() =>
+            onRemove(
+              instrument.symbol,
+              instrument.config.brokerType ?? 'deriv_ws'
+            )
+          }
           onSaveEdit={(updates) =>
-            onUpdateInstrument(instrument.symbol, updates)
+            onUpdateInstrument(
+              instrument.symbol,
+              instrument.config.brokerType ?? 'deriv_ws',
+              updates
+            )
           }
           onGenerateWebhook={() =>
             onGenerateWebhook(instrument.config.id || '')

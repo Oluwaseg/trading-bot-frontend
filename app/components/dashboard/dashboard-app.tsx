@@ -105,15 +105,20 @@ export function DashboardApp(d: TradingDashboard) {
 
   const runInstrumentAction = async (
     symbol: string,
+    brokerType: NonNullable<InstrumentConfig['brokerType']>,
     action: () => Promise<unknown>
   ) => {
-    setPendingInstrumentActions((current) => ({ ...current, [symbol]: true }));
+    const actionKey = `${brokerType}:${symbol}`;
+    setPendingInstrumentActions((current) => ({
+      ...current,
+      [actionKey]: true,
+    }));
     try {
       await action();
     } finally {
       setPendingInstrumentActions((current) => {
         const next = { ...current };
-        delete next[symbol];
+        delete next[actionKey];
         return next;
       });
     }
@@ -724,29 +729,40 @@ export function DashboardApp(d: TradingDashboard) {
                     rows={instrumentStates}
                     meta={instrumentStateMeta}
                     busySymbols={Object.keys(pendingInstrumentActions)}
-                    onToggle={(symbol) =>
-                      runInstrumentAction(symbol, () =>
-                        toggleInstrumentMutation.mutateAsync(symbol)
+                    onToggle={(symbol, brokerType) =>
+                      runInstrumentAction(symbol, brokerType, () =>
+                        toggleInstrumentMutation.mutateAsync({
+                          symbol,
+                          brokerType,
+                        })
                       )
                     }
-                    onClose={(symbol) =>
-                      runInstrumentAction(symbol, () =>
-                        closePositionMutation.mutateAsync(symbol)
+                    onClose={(symbol, brokerType) =>
+                      runInstrumentAction(symbol, brokerType, () =>
+                        closePositionMutation.mutateAsync({
+                          symbol,
+                          brokerType,
+                        })
                       )
                     }
-                    onRemove={(symbol) =>
-                      runInstrumentAction(symbol, () =>
-                        removeInstrumentMutation.mutateAsync(symbol)
+                    onRemove={(symbol, brokerType) =>
+                      runInstrumentAction(symbol, brokerType, () =>
+                        removeInstrumentMutation.mutateAsync({
+                          symbol,
+                          brokerType,
+                        })
                       )
                     }
                     capitalMarkets={capitalMarkets}
                     onUpdateInstrument={async (
                       symbol,
+                      brokerType,
                       updates
                     ): Promise<void> => {
-                      await runInstrumentAction(symbol, () =>
+                      await runInstrumentAction(symbol, brokerType, () =>
                         updateInstrumentMutation.mutateAsync({
                           symbol,
+                          brokerType,
                           updates,
                         })
                       );
