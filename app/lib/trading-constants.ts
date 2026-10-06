@@ -87,11 +87,7 @@ export const DEFAULT_NEW_INSTRUMENT: InstrumentConfig = {
   recoverySizePerCurrency: 1,
   maxRecoverySize: 35,
   multiplier: 100,
-  stopLossAmount: 0,
-  takeProfitAmount: 0,
   trailingStopDistanceAmount: 0,
-  trailingProfitActivationAmount: 0,
-  trailingProfitGivebackAmount: 0,
   enabled: true,
 };
 

@@ -271,24 +271,15 @@ export interface InstrumentConfig {
   historyDepth: number;
   positionSize: number;
   strategy?: InstrumentRecoveryStrategy;
-  /** Native size units added for each unit of realized account-currency loss. */
   recoverySizePerCurrency?: number;
-  /** Maximum broker-native position size for recovery strategies. */
   maxRecoverySize?: number;
   multiplier: number;
-  /** Initial account-currency loss limit (0 = off). */
   stopLossAmount?: number;
-  /** Legacy fixed take-profit; new UI uses trailing thresholds instead. */
   takeProfitAmount?: number;
-  /** Trail distance below peak unrealized profit for the trailing stop (0 = off). */
   trailingStopDistanceAmount?: number;
-  /** Start trailing profit after unrealized account-currency profit reaches this amount (0 = off). */
   trailingProfitActivationAmount?: number;
-  /** Close after profit retraces this much from its post-activation peak (0 = off). */
   trailingProfitGivebackAmount?: number;
-  /** Seconds after a trade before opening again (0 = off) */
   tradeCooldownSeconds?: number;
-  /** Min |short-long|/long gap in basis points to act on a crossover (0 = off) */
   minEmaSeparationBps?: number;
   enabled: boolean;
   createdAt?: string | null;
