@@ -73,6 +73,7 @@ export function DashboardApp(d: TradingDashboard) {
     updateInstrumentMutation,
     toggleInstrumentMutation,
     closePositionMutation,
+    updatePositionProtectionMutation,
     removeInstrumentMutation,
     analytics,
     logSummary,
@@ -457,6 +458,7 @@ export function DashboardApp(d: TradingDashboard) {
                       />
                       <SelectField
                         label='Timeframe'
+                        help='10s (ticks) builds bars from tick history; longer timeframes use broker candles.'
                         value={newInstrument.timeFrame}
                         onChange={(value) =>
                           setNewInstrument((prev) => ({
@@ -578,7 +580,7 @@ export function DashboardApp(d: TradingDashboard) {
                         label='Hard loss limit (account currency, 0=off)'
                         help={
                           newInstrumentBroker === 'mt5'
-                            ? 'Maximum loss monitored by this server; the current MT5 bridge does not install a broker-side stop-loss.'
+                            ? 'Account-currency loss budget converted to an MT5 stop price using the symbol tick value; the server also monitors position P/L.'
                             : 'Maximum loss sent as a broker-side stop for new Deriv positions, with server monitoring as an additional check.'
                         }
                         value={newInstrument.stopLossAmount ?? 0}
@@ -590,8 +592,19 @@ export function DashboardApp(d: TradingDashboard) {
                         }
                       />
                       <NumberField
-                        label='Trailing stop from entry (distance, 0=off)'
-                        help='Server-managed trailing exit. A value of 5 starts at -5 P/L and trails the best observed P/L by 5. It can fill beyond its line if price moves quickly.'
+                        label='Initial take profit (account currency, 0=off)'
+                        help='Sets the broker-side profit target when the position opens. You can adjust the open position target from its position-level controls.'
+                        value={newInstrument.takeProfitAmount ?? 0}
+                        onChange={(value) =>
+                          setNewInstrument((prev) => ({
+                            ...prev,
+                            takeProfitAmount: value,
+                          }))
+                        }
+                      />
+                      <NumberField
+                        label='Automatic trail distance (caps at breakeven)'
+                        help='Server-managed trailing exit. It starts at minus this distance, rises with peak P/L, and stops at breakeven; use the per-position manual stop to lock in profit.'
                         value={newInstrument.trailingStopDistanceAmount ?? 0}
                         onChange={(value) =>
                           setNewInstrument((prev) => ({
@@ -663,6 +676,15 @@ export function DashboardApp(d: TradingDashboard) {
                         closePositionMutation.mutateAsync({
                           symbol,
                           brokerType,
+                        })
+                      )
+                    }
+                    onUpdatePositionProtection={(symbol, brokerType, payload) =>
+                      runInstrumentAction(symbol, brokerType, () =>
+                        updatePositionProtectionMutation.mutateAsync({
+                          symbol,
+                          brokerType,
+                          ...payload,
                         })
                       )
                     }

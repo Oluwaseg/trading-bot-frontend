@@ -509,6 +509,41 @@ function useTradingDashboardInternal() {
     onError: (error) => setGlobalError(extractErrorMessage(error)),
   });
 
+  const updatePositionProtectionMutation = useMutation({
+    mutationFn: async ({
+      symbol,
+      brokerType,
+      contractId,
+      stopLoss,
+      takeProfit,
+    }: {
+      symbol: string;
+      brokerType: NonNullable<InstrumentConfig['brokerType']>;
+      contractId: string;
+      stopLoss?: number | null;
+      takeProfit?: number | null;
+    }) =>
+      (
+        await tradingAPI.updatePositionProtection(symbol, brokerType, {
+          contractId,
+          stopLoss,
+          takeProfit,
+        })
+      ).data,
+    onSuccess: async (_data, variables) => {
+      setGlobalError(null);
+      setGlobalSuccess(`Protection updated for ${variables.symbol}`);
+      setTimeout(() => setGlobalSuccess(null), 3000);
+      await queryClient.invalidateQueries({
+        queryKey: ['dashboard', 'instrument-state'],
+      });
+      await queryClient.refetchQueries({
+        queryKey: ['dashboard', 'instrument-state'],
+      });
+    },
+    onError: (error) => setGlobalError(extractErrorMessage(error)),
+  });
+
   const removeInstrumentMutation = useMutation({
     mutationFn: async ({
       symbol,
@@ -670,6 +705,7 @@ function useTradingDashboardInternal() {
     updateInstrumentMutation,
     toggleInstrumentMutation,
     closePositionMutation,
+    updatePositionProtectionMutation,
     removeInstrumentMutation,
     createUserMutation,
     resetPasswordMutation,

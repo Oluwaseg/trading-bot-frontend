@@ -21,6 +21,7 @@ export const ASSET_CLASS_OPTIONS = [
 export const TIMEFRAME_OPTIONS_BY_BROKER = {
   deriv_ws: [
     { value: '1m', label: '1m' },
+    { value: '10s', label: '10s (ticks)' },
     { value: '2m', label: '2m' },
     { value: '3m', label: '3m' },
     { value: '5m', label: '5m' },
@@ -34,6 +35,7 @@ export const TIMEFRAME_OPTIONS_BY_BROKER = {
   ],
   mt5: [
     { value: '1m', label: '1m' },
+    { value: '10s', label: '10s (ticks)' },
     { value: '5m', label: '5m' },
     { value: '15m', label: '15m' },
     { value: '30m', label: '30m' },
@@ -71,14 +73,14 @@ export const SYMBOL_OPTIONS_BY_BROKER_AND_CLASS: SymbolCatalog = {
 };
 
 export const DEFAULT_NEW_INSTRUMENT: InstrumentConfig = {
-  symbol: 'R_10',
+  symbol: 'R_75',
   brokerType: 'deriv_ws',
   assetClass: 'Synthetic Indices',
   shortEmaPeriod: 5,
   longEmaPeriod: 20,
-  timeFrame: '5m',
+  timeFrame: '1d',
   historyDepth: 500,
-  positionSize: 10,
+  positionSize: 1,
   strategy: 'fixed_isolated_stake',
   recoverySizePerCurrency: 1,
   maxRecoverySize: 35,

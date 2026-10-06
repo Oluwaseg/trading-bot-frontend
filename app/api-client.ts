@@ -331,6 +331,8 @@ export interface InstrumentState {
     bid_price?: number | null;
     takeProfitAmount?: number;
     stopLossAmount?: number;
+    protectionStopLoss?: number;
+    protectionTakeProfit?: number;
     trailingPeakProfit?: number | null;
     trailingStopLevel?: number | null;
   } | null;
@@ -433,6 +435,19 @@ export const tradingAPI = {
   closeInstrumentPosition: (symbol: string, brokerType = 'deriv_ws') =>
     apiClient.post<{ success: boolean; contracts_closed: number }>(
       `/instruments/${symbol}/close?brokerType=${encodeURIComponent(brokerType)}`
+    ),
+  updatePositionProtection: (
+    symbol: string,
+    brokerType: BrokerType,
+    payload: {
+      contractId: string;
+      stopLoss?: number | null;
+      takeProfit?: number | null;
+    }
+  ) =>
+    apiClient.post<{ success: boolean; result: unknown }>(
+      `/instruments/${symbol}/position-protection?brokerType=${encodeURIComponent(brokerType)}`,
+      payload
     ),
 
   getAdminUsers: () => apiClient.get<AdminUser[]>('/admin/users'),

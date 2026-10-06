@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { InstrumentConfig, InstrumentState } from '../../api-client';
 import {
   ASSET_CLASS_OPTIONS,
@@ -23,6 +23,7 @@ export function InstrumentBoard({
   busySymbols,
   onToggle,
   onClose,
+  onUpdatePositionProtection,
   onRemove,
   onUpdateInstrument,
   onGenerateWebhook,
@@ -44,6 +45,15 @@ export function InstrumentBoard({
     symbol: string,
     brokerType: NonNullable<InstrumentConfig['brokerType']>
   ) => void;
+  onUpdatePositionProtection: (
+    symbol: string,
+    brokerType: NonNullable<InstrumentConfig['brokerType']>,
+    payload: {
+      contractId: string;
+      stopLoss?: number | null;
+      takeProfit?: number | null;
+    }
+  ) => Promise<void>;
   onRemove: (
     symbol: string,
     brokerType: NonNullable<InstrumentConfig['brokerType']>
@@ -89,6 +99,13 @@ export function InstrumentBoard({
               instrument.config.brokerType ?? 'deriv_ws'
             )
           }
+          onUpdatePositionProtection={(payload) =>
+            onUpdatePositionProtection(
+              instrument.symbol,
+              instrument.config.brokerType ?? 'deriv_ws',
+              payload
+            )
+          }
           onRemove={() =>
             onRemove(
               instrument.symbol,
@@ -121,6 +138,7 @@ function InstrumentRow({
   busy,
   onToggle,
   onClose,
+  onUpdatePositionProtection,
   onRemove,
   onSaveEdit,
   onGenerateWebhook,
@@ -134,6 +152,11 @@ function InstrumentRow({
   busy: boolean;
   onToggle: () => void;
   onClose: () => void;
+  onUpdatePositionProtection: (payload: {
+    contractId: string;
+    stopLoss?: number | null;
+    takeProfit?: number | null;
+  }) => Promise<void>;
   onRemove: () => Promise<void>;
   onSaveEdit: (updates: Partial<InstrumentConfig>) => Promise<void>;
   onGenerateWebhook: () => void;
@@ -165,7 +188,7 @@ function InstrumentRow({
           : c.positionSize),
       multiplier: c.multiplier,
       stopLossAmount: c.stopLossAmount ?? 0,
-      takeProfitAmount: 0,
+      takeProfitAmount: c.takeProfitAmount ?? 0,
       trailingStopDistanceAmount: c.trailingStopDistanceAmount ?? 0,
       trailingProfitActivationAmount: c.trailingProfitActivationAmount ?? 0,
       trailingProfitGivebackAmount: c.trailingProfitGivebackAmount ?? 0,
@@ -201,7 +224,7 @@ function InstrumentRow({
           : {}),
         multiplier: draft.multiplier,
         stopLossAmount: draft.stopLossAmount,
-        takeProfitAmount: 0,
+        takeProfitAmount: draft.takeProfitAmount ?? 0,
         trailingStopDistanceAmount: draft.trailingStopDistanceAmount ?? 0,
         trailingProfitActivationAmount:
           draft.trailingProfitActivationAmount ?? 0,
@@ -394,13 +417,22 @@ function InstrumentRow({
                     />
                   ) : null}
                 </div>
-                <ButtonPrimary
-                  className='bg-destructive text-destructive-foreground hover:opacity-90 sm:shrink-0'
-                  disabled={busy}
-                  onClick={onClose}
-                >
-                  Sell / close
-                </ButtonPrimary>
+                <div className='flex flex-wrap items-start gap-3'>
+                  <PositionProtectionControls
+                    key={open.contract_id}
+                    instrument={instrument}
+                    position={open}
+                    busy={busy}
+                    onSave={onUpdatePositionProtection}
+                  />
+                  <ButtonPrimary
+                    className='bg-destructive text-destructive-foreground hover:opacity-90 sm:shrink-0'
+                    disabled={busy}
+                    onClick={onClose}
+                  >
+                    Sell / close
+                  </ButtonPrimary>
+                </div>
               </div>
             ) : (
               <span className='text-muted-foreground'>No open position</span>
@@ -548,7 +580,7 @@ function InstrumentRow({
             />
             <SelectField
               label='Timeframe'
-              help='Candle duration used to calculate the EMA signal.'
+              help='Candle duration used to calculate the EMA signal. 10s (ticks) builds bars from tick history.'
               value={draft.timeFrame ?? '1m'}
               onChange={(value) =>
                 setDraft((prev) => ({ ...prev, timeFrame: value }))
@@ -637,7 +669,7 @@ function InstrumentRow({
               label='Hard loss limit (account currency, 0=off)'
               help={
                 editBroker === 'mt5'
-                  ? 'Maximum loss monitored by this server; the current MT5 bridge does not install a broker-side stop-loss.'
+                  ? 'Account-currency loss budget converted to an MT5 stop price using the symbol tick value; the server also monitors position P/L.'
                   : 'Maximum loss sent as a broker-side stop for new Deriv positions, with server monitoring as an additional check.'
               }
               value={draft.stopLossAmount ?? 0}
@@ -646,8 +678,16 @@ function InstrumentRow({
               }
             />
             <NumberField
-              label='Trailing stop from entry (distance, 0=off)'
-              help='Server-managed trailing exit. A value of 5 starts at -5 P/L and trails the best observed P/L by 5. It can fill beyond its line if price moves quickly.'
+              label='Initial take profit (account currency, 0=off)'
+              help='Sets the broker-side profit target when a position opens. Adjust the live target from its position-level controls.'
+              value={draft.takeProfitAmount ?? 0}
+              onChange={(value) =>
+                setDraft((prev) => ({ ...prev, takeProfitAmount: value }))
+              }
+            />
+            <NumberField
+              label='Automatic trail distance (caps at breakeven)'
+              help='Server-managed trailing exit. It starts at minus this distance, rises with peak P/L, and stops at breakeven; use the per-position manual stop to lock in profit.'
               value={draft.trailingStopDistanceAmount ?? 0}
               onChange={(value) =>
                 setDraft((prev) => ({
@@ -731,6 +771,216 @@ function InstrumentRow({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function PositionProtectionControls({
+  instrument,
+  position,
+  busy,
+  onSave,
+}: {
+  instrument: InstrumentState;
+  position: NonNullable<InstrumentState['openPosition']>;
+  busy: boolean;
+  onSave: (payload: {
+    contractId: string;
+    stopLoss?: number | null;
+    takeProfit?: number | null;
+  }) => Promise<void>;
+}) {
+  const [stopLoss, setStopLoss] = useState<number | null>(
+    position.protectionStopLoss ?? null
+  );
+  const [takeProfit, setTakeProfit] = useState<number | null>(
+    position.protectionTakeProfit && position.protectionTakeProfit > 0
+      ? position.protectionTakeProfit
+      : null
+  );
+  const [saving, setSaving] = useState(false);
+  const [dragging, setDragging] = useState<'stop' | 'target' | null>(null);
+  const scaleRef = useRef<HTMLDivElement>(null);
+  const isDeriv = (instrument.config.brokerType ?? 'deriv_ws') === 'deriv_ws';
+  const entryLevel = isDeriv ? 0 : Number(position.buy_price);
+  const currentLevel = isDeriv
+    ? Number(position.profit ?? 0)
+    : Number(position.bid_price ?? position.buy_price);
+  const stopLevel = stopLoss;
+  const targetLevel = takeProfit;
+  const levels = [entryLevel, currentLevel, stopLevel, targetLevel].filter(
+    (value): value is number => value != null && Number.isFinite(value)
+  );
+  const rawMin = Math.min(...levels);
+  const rawMax = Math.max(...levels);
+  const padding = Math.max((rawMax - rawMin) * 0.2, isDeriv ? 1 : 0.0001);
+  const scaleMin = rawMin - padding;
+  const scaleMax = rawMax + padding;
+  const scaleSpan = scaleMax - scaleMin || 1;
+  const markerPosition = (value: number) =>
+    `${Math.min(100, Math.max(0, ((value - scaleMin) / scaleSpan) * 100))}%`;
+
+  const moveLevel = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging || !scaleRef.current) return;
+    const bounds = scaleRef.current.getBoundingClientRect();
+    if (bounds.width === 0) return;
+    const ratio = Math.min(
+      1,
+      Math.max(0, (event.clientX - bounds.left) / bounds.width)
+    );
+    const value = Number(
+      (scaleMin + ratio * scaleSpan).toFixed(isDeriv ? 2 : 5)
+    );
+    if (dragging === 'stop') setStopLoss(value);
+    else setTakeProfit(value);
+  };
+
+  useEffect(() => {
+    setStopLoss(position.protectionStopLoss ?? null);
+    setTakeProfit(
+      position.protectionTakeProfit && position.protectionTakeProfit > 0
+        ? position.protectionTakeProfit
+        : null
+    );
+  }, [position.protectionStopLoss, position.protectionTakeProfit]);
+
+  const submit = async () => {
+    setSaving(true);
+    try {
+      await onSave({
+        contractId: position.contract_id,
+        stopLoss,
+        takeProfit,
+      });
+    } catch {
+      // The dashboard mutation reports failures globally.
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className='min-w-0 flex-1 rounded-md border border-border/70 bg-background/50 p-3'>
+      <div className='mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs'>
+        <span className='font-semibold text-foreground'>Position levels</span>
+        <span className='text-muted-foreground'>
+          {isDeriv ? 'Deriv account-currency amounts' : 'MT5 broker prices'}
+        </span>
+      </div>
+      <div className='mb-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground'>
+        <span>Entry {entryLevel.toFixed(isDeriv ? 2 : 5)}</span>
+        <span>
+          {isDeriv ? 'P/L' : 'Current'}{' '}
+          {position.profit != null
+            ? `${position.profit >= 0 ? '+' : ''}${Number(position.profit).toFixed(2)}`
+            : position.bid_price != null
+              ? Number(position.bid_price).toFixed(5)
+              : '—'}
+        </span>
+        <span>
+          Stop {stopLoss == null ? 'off' : stopLoss.toFixed(isDeriv ? 2 : 5)}
+        </span>
+        <span>
+          Target{' '}
+          {takeProfit == null ? 'off' : takeProfit.toFixed(isDeriv ? 2 : 5)}
+        </span>
+      </div>
+      <div
+        ref={scaleRef}
+        className='relative mx-2 mb-4 h-7 touch-none rounded border-y border-border/80 bg-muted/50'
+        onPointerMove={moveLevel}
+        onPointerUp={() => setDragging(null)}
+        onPointerCancel={() => setDragging(null)}
+        role='img'
+        aria-label={
+          isDeriv
+            ? 'Position P/L and protection levels'
+            : 'Position price and protection levels'
+        }
+      >
+        <span
+          className='absolute inset-y-0 w-px bg-cyan-300'
+          style={{ left: markerPosition(entryLevel) }}
+          aria-hidden='true'
+        />
+        <span
+          className='absolute inset-y-0 w-0.5 bg-white'
+          style={{ left: markerPosition(currentLevel) }}
+          aria-hidden='true'
+        />
+        {stopLevel != null ? (
+          <button
+            type='button'
+            aria-label='Drag manual stop level'
+            className='absolute top-0 z-10 h-7 w-3 -translate-x-1/2 cursor-grab touch-none bg-rose-400/80 active:cursor-grabbing'
+            style={{ left: markerPosition(stopLevel) }}
+            onPointerDown={(event) => {
+              event.currentTarget.setPointerCapture(event.pointerId);
+              setDragging('stop');
+            }}
+          />
+        ) : null}
+        {targetLevel != null ? (
+          <button
+            type='button'
+            aria-label='Drag take-profit level'
+            className='absolute top-0 z-10 h-7 w-3 -translate-x-1/2 cursor-grab touch-none bg-emerald-400/80 active:cursor-grabbing'
+            style={{ left: markerPosition(targetLevel) }}
+            onPointerDown={(event) => {
+              event.currentTarget.setPointerCapture(event.pointerId);
+              setDragging('target');
+            }}
+          />
+        ) : null}
+      </div>
+      <div className='grid gap-2 sm:grid-cols-[minmax(8rem,1fr)_minmax(8rem,1fr)_auto] sm:items-end'>
+        <div>
+          <label className='mb-1.5 flex items-center gap-2 text-xs text-muted-foreground'>
+            <input
+              type='checkbox'
+              checked={stopLoss !== null}
+              onChange={(event) => setStopLoss(event.target.checked ? 0 : null)}
+            />
+            {isDeriv ? 'Manual stop P/L level' : 'Hard stop price'}
+          </label>
+          {stopLoss !== null ? (
+            <NumberField
+              label={isDeriv ? 'P/L ($; positive locks profit)' : 'Price'}
+              value={stopLoss}
+              onChange={(value) =>
+                setStopLoss(isDeriv ? value : Math.max(0, value))
+              }
+            />
+          ) : null}
+        </div>
+        <div>
+          <label className='mb-1.5 flex items-center gap-2 text-xs text-muted-foreground'>
+            <input
+              type='checkbox'
+              checked={takeProfit !== null}
+              onChange={(event) =>
+                setTakeProfit(event.target.checked ? 0 : null)
+              }
+            />
+            {isDeriv ? 'Take profit' : 'Take-profit price'}
+          </label>
+          {takeProfit !== null ? (
+            <NumberField
+              label={isDeriv ? 'Profit amount ($)' : 'Price'}
+              value={takeProfit}
+              onChange={(value) => setTakeProfit(Math.max(0, value))}
+            />
+          ) : null}
+        </div>
+        <ButtonGhost disabled={busy || saving} onClick={() => void submit()}>
+          {saving ? 'Applying…' : 'Apply levels'}
+        </ButtonGhost>
+      </div>
+      <p className='mt-2 text-[10px] text-muted-foreground'>
+        {isDeriv
+          ? 'Deriv manual stops monitor live P/L; the configured broker-side loss limit remains as a backstop. Take profit is broker-side.'
+          : 'MT5 changes are sent as native broker price levels. Automatic trailing remains a separate server-managed rule.'}
+      </p>
     </div>
   );
 }
