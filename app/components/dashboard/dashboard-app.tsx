@@ -577,32 +577,6 @@ export function DashboardApp(d: TradingDashboard) {
                         />
                       ) : null}
                       <NumberField
-                        label='Hard loss limit (account currency, 0=off)'
-                        help={
-                          newInstrumentBroker === 'mt5'
-                            ? 'Account-currency loss budget converted to an MT5 stop price using the symbol tick value; the server also monitors position P/L.'
-                            : 'Maximum loss sent as a broker-side stop for new Deriv positions, with server monitoring as an additional check.'
-                        }
-                        value={newInstrument.stopLossAmount ?? 0}
-                        onChange={(value) =>
-                          setNewInstrument((prev) => ({
-                            ...prev,
-                            stopLossAmount: value,
-                          }))
-                        }
-                      />
-                      <NumberField
-                        label='Initial take profit (account currency, 0=off)'
-                        help='Sets the broker-side profit target when the position opens. You can adjust the open position target from its position-level controls.'
-                        value={newInstrument.takeProfitAmount ?? 0}
-                        onChange={(value) =>
-                          setNewInstrument((prev) => ({
-                            ...prev,
-                            takeProfitAmount: value,
-                          }))
-                        }
-                      />
-                      <NumberField
                         label='Automatic trail distance (caps at breakeven)'
                         help='Server-managed trailing exit. It starts at minus this distance, rises with peak P/L, and stops at breakeven; use the per-position manual stop to lock in profit.'
                         value={newInstrument.trailingStopDistanceAmount ?? 0}
@@ -610,28 +584,6 @@ export function DashboardApp(d: TradingDashboard) {
                           setNewInstrument((prev) => ({
                             ...prev,
                             trailingStopDistanceAmount: value,
-                          }))
-                        }
-                      />
-                      <NumberField
-                        label='Trailing profit activation (account currency, 0=off)'
-                        value={
-                          newInstrument.trailingProfitActivationAmount ?? 0
-                        }
-                        onChange={(value) =>
-                          setNewInstrument((prev) => ({
-                            ...prev,
-                            trailingProfitActivationAmount: value,
-                          }))
-                        }
-                      />
-                      <NumberField
-                        label='Trailing giveback (account currency)'
-                        value={newInstrument.trailingProfitGivebackAmount ?? 0}
-                        onChange={(value) =>
-                          setNewInstrument((prev) => ({
-                            ...prev,
-                            trailingProfitGivebackAmount: value,
                           }))
                         }
                       />
@@ -648,6 +600,10 @@ export function DashboardApp(d: TradingDashboard) {
                               delete payload.recoverySizePerCurrency;
                               delete payload.maxRecoverySize;
                             }
+                            delete payload.stopLossAmount;
+                            delete payload.takeProfitAmount;
+                            delete payload.trailingProfitActivationAmount;
+                            delete payload.trailingProfitGivebackAmount;
                             addInstrumentMutation.mutate(payload);
                           }}
                         >

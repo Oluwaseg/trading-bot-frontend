@@ -187,11 +187,7 @@ function InstrumentRow({
           ? Math.max(35, c.positionSize)
           : c.positionSize),
       multiplier: c.multiplier,
-      stopLossAmount: c.stopLossAmount ?? 0,
-      takeProfitAmount: c.takeProfitAmount ?? 0,
       trailingStopDistanceAmount: c.trailingStopDistanceAmount ?? 0,
-      trailingProfitActivationAmount: c.trailingProfitActivationAmount ?? 0,
-      trailingProfitGivebackAmount: c.trailingProfitGivebackAmount ?? 0,
     });
     setEditing(true);
   };
@@ -223,12 +219,7 @@ function InstrumentRow({
             }
           : {}),
         multiplier: draft.multiplier,
-        stopLossAmount: draft.stopLossAmount,
-        takeProfitAmount: draft.takeProfitAmount ?? 0,
         trailingStopDistanceAmount: draft.trailingStopDistanceAmount ?? 0,
-        trailingProfitActivationAmount:
-          draft.trailingProfitActivationAmount ?? 0,
-        trailingProfitGivebackAmount: draft.trailingProfitGivebackAmount ?? 0,
       });
       setEditing(false);
       setDraft({});
@@ -307,6 +298,11 @@ function InstrumentRow({
                 Syncing
               </span>
             )}
+            {instrument.positionSyncPending && (
+              <span className='text-[11px] text-muted-foreground'>
+                Confirming position
+              </span>
+            )}
             {rateLimited && (
               <span className='rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-200'>
                 Rate-limited / Backoff
@@ -370,8 +366,12 @@ function InstrumentRow({
             />
             <MiniStat label='Lev.' value={`${instrument.config.multiplier}x`} />
             <MiniStat
-              label='Risk settings'
-              value={`${instrument.config.stopLossAmount ?? 0} / ${instrument.config.trailingStopDistanceAmount ?? 0} / ${instrument.config.trailingProfitGivebackAmount ?? 0}`}
+              label='Manual trail'
+              value={
+                instrument.config.trailingStopDistanceAmount
+                  ? `${instrument.config.trailingStopDistanceAmount}`
+                  : 'Off'
+              }
             />
           </div>
 
@@ -388,29 +388,23 @@ function InstrumentRow({
                     </span>
                   </div>
                   <p className='mt-1 text-xs text-muted-foreground'>
-                    Loss limit {instrument.config.stopLossAmount || 'off'} ·
                     Trail SL{' '}
-                    {instrument.config.trailingStopDistanceAmount || 'off'} ·
-                    Trail TP activation{' '}
-                    {instrument.config.trailingProfitActivationAmount || 'off'}
-                    {instrument.config.trailingProfitGivebackAmount
-                      ? ` · giveback ${instrument.config.trailingProfitGivebackAmount}`
-                      : ''}
+                    {instrument.config.trailingStopDistanceAmount || 'off'}
                     {open.profit != null
                       ? ` · P/L ${open.profit >= 0 ? '+' : ''}${Number(open.profit).toFixed(2)}`
                       : ''}
                     {open.trailingPeakProfit != null
-                      ? ` · Bot peak +${Number(open.trailingPeakProfit).toFixed(2)}`
-                      : ' · Bot peak not recorded'}
+                      ? ` · Peak +${Number(open.trailingPeakProfit).toFixed(2)}`
+                      : ' · Peak not recorded'}
                     {open.trailingStopLevel != null
-                      ? ` · Trail closes at +${Number(open.trailingStopLevel).toFixed(2)}`
+                      ? ` · Stop +${Number(open.trailingStopLevel).toFixed(2)}`
                       : ''}
                     {open.bid_price != null
                       ? ` · value $${Number(open.bid_price).toFixed(2)}`
                       : ''}
                   </p>
                   {Number(instrument.config.trailingStopDistanceAmount) > 0 ? (
-                    <ProfitTrailVisual
+                    <ManualTrailingBox
                       currentProfit={open.profit}
                       peakProfit={open.trailingPeakProfit}
                       stopLevel={open.trailingStopLevel}
@@ -422,12 +416,12 @@ function InstrumentRow({
                     key={open.contract_id}
                     instrument={instrument}
                     position={open}
-                    busy={busy}
+                    busy={busy || (instrument.positionSyncPending ?? false)}
                     onSave={onUpdatePositionProtection}
                   />
                   <ButtonPrimary
                     className='bg-destructive text-destructive-foreground hover:opacity-90 sm:shrink-0'
-                    disabled={busy}
+                    disabled={busy || instrument.positionSyncPending}
                     onClick={onClose}
                   >
                     Sell / close
@@ -666,26 +660,6 @@ function InstrumentRow({
               />
             ) : null}
             <NumberField
-              label='Hard loss limit (account currency, 0=off)'
-              help={
-                editBroker === 'mt5'
-                  ? 'Account-currency loss budget converted to an MT5 stop price using the symbol tick value; the server also monitors position P/L.'
-                  : 'Maximum loss sent as a broker-side stop for new Deriv positions, with server monitoring as an additional check.'
-              }
-              value={draft.stopLossAmount ?? 0}
-              onChange={(value) =>
-                setDraft((prev) => ({ ...prev, stopLossAmount: value }))
-              }
-            />
-            <NumberField
-              label='Initial take profit (account currency, 0=off)'
-              help='Sets the broker-side profit target when a position opens. Adjust the live target from its position-level controls.'
-              value={draft.takeProfitAmount ?? 0}
-              onChange={(value) =>
-                setDraft((prev) => ({ ...prev, takeProfitAmount: value }))
-              }
-            />
-            <NumberField
               label='Automatic trail distance (caps at breakeven)'
               help='Server-managed trailing exit. It starts at minus this distance, rises with peak P/L, and stops at breakeven; use the per-position manual stop to lock in profit.'
               value={draft.trailingStopDistanceAmount ?? 0}
@@ -693,28 +667,6 @@ function InstrumentRow({
                 setDraft((prev) => ({
                   ...prev,
                   trailingStopDistanceAmount: value,
-                }))
-              }
-            />
-            <NumberField
-              label='Trailing profit activation (account currency, 0=off)'
-              help='Profit level that must be reached before trailing take-profit begins watching for a pullback. Requires a nonzero giveback setting.'
-              value={draft.trailingProfitActivationAmount ?? 0}
-              onChange={(value) =>
-                setDraft((prev) => ({
-                  ...prev,
-                  trailingProfitActivationAmount: value,
-                }))
-              }
-            />
-            <NumberField
-              label='Trailing take-profit giveback (account currency, 0=off)'
-              help='After activation, attempts a close when current P/L falls this far below the best observed P/L. It can overlap with trailing stop; whichever threshold is hit first triggers the close.'
-              value={draft.trailingProfitGivebackAmount ?? 0}
-              onChange={(value) =>
-                setDraft((prev) => ({
-                  ...prev,
-                  trailingProfitGivebackAmount: value,
                 }))
               }
             />
@@ -985,7 +937,7 @@ function PositionProtectionControls({
   );
 }
 
-function ProfitTrailVisual({
+function ManualTrailingBox({
   currentProfit,
   peakProfit,
   stopLevel,
@@ -997,77 +949,40 @@ function ProfitTrailVisual({
   const current =
     currentProfit != null && Number.isFinite(Number(currentProfit))
       ? Number(currentProfit)
-      : null;
+      : 0;
   const peak =
     peakProfit != null && Number.isFinite(Number(peakProfit))
       ? Number(peakProfit)
-      : null;
+      : current;
   const stop =
     stopLevel != null && Number.isFinite(Number(stopLevel))
       ? Number(stopLevel)
-      : null;
+      : 0;
 
-  if (current == null) {
-    return (
-      <p className='mt-2 text-[11px] text-muted-foreground'>
-        Waiting for live P/L before plotting the trailing rule.
-      </p>
-    );
-  }
-
-  const safePeak = peak ?? current;
-  const safeStop = stop ?? current;
-  const values = [0, current, safePeak, safeStop];
-  const rawMin = Math.min(...values);
-  const rawMax = Math.max(...values);
-  const padding = Math.max((rawMax - rawMin) * 0.12, 1);
-  const scaleMin = rawMin - padding;
-  const scaleMax = rawMax + padding;
-  const span = scaleMax - scaleMin;
-  const markerPosition = (value: number) =>
-    `${Math.min(100, Math.max(0, ((value - scaleMin) / span) * 100))}%`;
   const formatSigned = (value: number) =>
     `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
 
-  const stopReached = current <= safeStop;
-
   return (
-    <div className='mt-3 max-w-xl rounded-md border border-border/70 bg-background/50 px-3 py-2'>
-      <div className='flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]'>
-        <span className='font-medium text-foreground'>
-          {stopReached ? 'Stop threshold reached' : 'Trailing stop monitor'}
-        </span>
-        <span className='text-muted-foreground'>Account-currency P/L</span>
+    <div className='mt-3 max-w-md rounded-md border border-border/70 bg-background/50 px-3 py-2'>
+      <div className='flex items-center justify-between gap-2 text-[11px]'>
+        <span className='font-medium text-foreground'>Manual trailing</span>
+        <span className='text-muted-foreground'>live P/L</span>
       </div>
-      <div className='relative mx-1 my-3 h-2 rounded-full bg-muted' role='img'>
-        <span
-          className='absolute -top-1 h-4 w-px bg-muted-foreground/70'
-          style={{ left: markerPosition(0) }}
-          aria-hidden='true'
-        />
-        <span
-          className='absolute -top-1 h-4 w-0.5 bg-rose-400'
-          style={{ left: markerPosition(safeStop) }}
-          aria-hidden='true'
-        />
-        <span
-          className='absolute -top-1 h-4 w-0.5 bg-cyan-300'
-          style={{ left: markerPosition(safePeak) }}
-          aria-hidden='true'
-        />
-        <span
-          className={`absolute -top-0.5 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-background ${stopReached ? 'bg-rose-400' : 'bg-emerald-300'}`}
-          style={{ left: markerPosition(current) }}
-          aria-hidden='true'
-        />
-      </div>
-      <div className='flex flex-wrap gap-x-4 gap-y-1 text-[11px]'>
-        <span className='text-emerald-200'>
-          Current {formatSigned(current)}
-        </span>
-        <span className='text-cyan-200'>Peak {formatSigned(safePeak)}</span>
-        <span className='text-rose-200'>Stop {formatSigned(safeStop)}</span>
-        <span className='text-muted-foreground'>Zero 0.00</span>
+      <div className='mt-2 grid grid-cols-3 gap-2 text-[11px]'>
+        <div className='rounded border border-border/70 bg-background px-2 py-1.5'>
+          <div className='text-muted-foreground'>Current</div>
+          <div className='font-medium text-emerald-200'>
+            {formatSigned(current)}
+          </div>
+        </div>
+        <div className='rounded border border-border/70 bg-background px-2 py-1.5'>
+          <div className='text-muted-foreground'>Peak</div>
+          <div className='font-medium text-cyan-200'>{formatSigned(peak)}</div>
+        </div>
+        <div className='rounded border border-border/70 bg-background px-2 py-1.5'>
+          <div className='text-muted-foreground'>Stop</div>
+          <div className='font-medium text-rose-200'>{formatSigned(stop)}</div>
+        </div>
       </div>
     </div>
   );

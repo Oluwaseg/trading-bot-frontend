@@ -4,7 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { DerivAccountRow, Mt5Account } from '../api-client';
 import {
   ApiError,
@@ -14,6 +14,7 @@ import {
   type TokenStatus,
 } from '../api-client';
 import { extractErrorMessage } from '../lib/format';
+import { resolvePositionSnapshot } from '../lib/position-snapshot';
 import { DEFAULT_NEW_INSTRUMENT } from '../lib/trading-constants';
 
 export type LoginForm = {
@@ -36,6 +37,7 @@ const poll = {
 function useTradingDashboardInternal() {
   const [instrumentPollMs, setInstrumentPollMs] = useState<number>(8000);
   const queryClient = useQueryClient();
+  const emptyPositionSnapshotCounts = useRef(new Map<string, number>());
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [globalSuccess, setGlobalSuccess] = useState<string | null>(null);
   const [loginForm, setLoginForm] = useState<LoginForm>({
@@ -241,13 +243,38 @@ function useTradingDashboardInternal() {
         instrument.brokerType ?? 'deriv_ws',
         instrument.symbol,
       ],
-      queryFn: async () =>
-        (
+      queryFn: async () => {
+        const queryKey = [
+          'dashboard',
+          'instrument-state',
+          instrument.brokerType ?? 'deriv_ws',
+          instrument.symbol,
+        ];
+        const nextState = (
           await tradingAPI.getInstrumentState(
             instrument.symbol,
             instrument.brokerType ?? 'deriv_ws'
           )
-        ).data,
+        ).data;
+        const stateKey = `${instrument.brokerType ?? 'deriv_ws'}:${instrument.symbol}`;
+        const previousState =
+          queryClient.getQueryData<InstrumentState>(queryKey);
+
+        const resolved = resolvePositionSnapshot(
+          previousState,
+          nextState,
+          emptyPositionSnapshotCounts.current.get(stateKey) ?? 0
+        );
+        if (resolved.emptyCount > 0) {
+          emptyPositionSnapshotCounts.current.set(
+            stateKey,
+            resolved.emptyCount
+          );
+        } else {
+          emptyPositionSnapshotCounts.current.delete(stateKey);
+        }
+        return resolved.state;
+      },
       enabled: !!currentUser,
       refetchInterval: instrumentPollMs,
       placeholderData: (previousData: InstrumentState | undefined) =>

@@ -21,6 +21,7 @@ export const ASSET_CLASS_OPTIONS = [
 export const TIMEFRAME_OPTIONS_BY_BROKER = {
   deriv_ws: [
     { value: '1m', label: '1m' },
+    { value: '1s', label: '1s (ticks)' },
     { value: '10s', label: '10s (ticks)' },
     { value: '2m', label: '2m' },
     { value: '3m', label: '3m' },
@@ -35,6 +36,7 @@ export const TIMEFRAME_OPTIONS_BY_BROKER = {
   ],
   mt5: [
     { value: '1m', label: '1m' },
+    { value: '1s', label: '1s (ticks)' },
     { value: '10s', label: '10s (ticks)' },
     { value: '5m', label: '5m' },
     { value: '15m', label: '15m' },
@@ -78,7 +80,7 @@ export const DEFAULT_NEW_INSTRUMENT: InstrumentConfig = {
   assetClass: 'Synthetic Indices',
   shortEmaPeriod: 5,
   longEmaPeriod: 20,
-  timeFrame: '1d',
+  timeFrame: '1s',
   historyDepth: 500,
   positionSize: 1,
   strategy: 'fixed_isolated_stake',

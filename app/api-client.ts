@@ -310,6 +310,7 @@ export interface InstrumentState {
   symbol: string;
   config: InstrumentConfig;
   signal: InstrumentSignal | null;
+  positionSyncPending?: boolean;
   historyNotice?: {
     requested: number;
     received: number;
