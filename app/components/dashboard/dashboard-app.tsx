@@ -52,14 +52,11 @@ export function DashboardApp(d: TradingDashboard) {
     tokenStatus,
     tokenInput,
     setTokenInput,
-    webhookSecret,
-    webhookSecretMutation,
     mt5AccountForm,
     setMt5AccountForm,
     mt5Accounts,
     createMt5AccountMutation,
     deleteMt5AccountMutation,
-    generateWebhookMutation,
     saveTokenMutation,
     deleteTokenMutation,
     instrumentStates,
@@ -72,6 +69,8 @@ export function DashboardApp(d: TradingDashboard) {
     addInstrumentMutation,
     updateInstrumentMutation,
     toggleInstrumentMutation,
+    automatedEntriesMutation,
+    enableInstrumentAsEmaMutation,
     closePositionMutation,
     updatePositionProtectionMutation,
     removeInstrumentMutation,
@@ -126,6 +125,9 @@ export function DashboardApp(d: TradingDashboard) {
     (instrument) =>
       (instrument.config.brokerType ?? 'deriv_ws') === 'deriv_ws' &&
       !!instrument.openPosition
+  ).length;
+  const automatedEntriesEnabledCount = instrumentStates.filter(
+    (instrument) => instrument.config.automatedEntriesEnabled === true
   ).length;
   const preferredDerivAccountId = tokenStatus?.preferredDerivAccountId ?? null;
   const connectedDerivAccountId =
@@ -291,6 +293,12 @@ export function DashboardApp(d: TradingDashboard) {
 
             {section === 'overview' && (
               <>
+                <output className='rounded-md border border-border bg-muted/50 px-4 py-3 text-sm text-foreground'>
+                  Automated entries are enabled on{' '}
+                  {automatedEntriesEnabledCount}
+                  {' of '}
+                  {instrumentStates.length} instruments for this account.
+                </output>
                 <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
                   <Kpi
                     label={isAdmin ? 'Users' : 'Instruments'}
@@ -298,9 +306,14 @@ export function DashboardApp(d: TradingDashboard) {
                     hint={isAdmin ? 'In this deployment' : 'Configured symbols'}
                   />
                   <Kpi
-                    label='Active'
+                    label='Monitoring'
                     value={activeInstrumentCount}
-                    hint='Automation enabled'
+                    hint='Instruments not paused'
+                  />
+                  <Kpi
+                    label='Automated entries'
+                    value={`${automatedEntriesEnabledCount}/${instrumentStates.length}`}
+                    hint='Per instrument'
                   />
                   <Kpi
                     label='Deriv open positions'
@@ -495,23 +508,6 @@ export function DashboardApp(d: TradingDashboard) {
                         }
                       />
                       <SelectField
-                        label='Signal source'
-                        value={newInstrument.signalSource ?? 'ema'}
-                        onChange={(value) =>
-                          setNewInstrument((prev) => ({
-                            ...prev,
-                            signalSource: value as 'ema' | 'tradingview',
-                          }))
-                        }
-                        options={[
-                          { value: 'ema', label: 'Internal EMA candles' },
-                          {
-                            value: 'tradingview',
-                            label: 'TradingView webhook',
-                          },
-                        ]}
-                      />
-                      <SelectField
                         label='Execution strategy'
                         value={newInstrument.strategy ?? 'fixed_isolated_stake'}
                         onChange={(value) =>
@@ -627,6 +623,15 @@ export function DashboardApp(d: TradingDashboard) {
                         })
                       )
                     }
+                    onSetAutomatedEntries={(symbol, brokerType, enabled) =>
+                      runInstrumentAction(symbol, brokerType, () =>
+                        automatedEntriesMutation.mutateAsync({
+                          symbol,
+                          brokerType,
+                          enabled,
+                        })
+                      )
+                    }
                     onClose={(symbol, brokerType) =>
                       runInstrumentAction(symbol, brokerType, () =>
                         closePositionMutation.mutateAsync({
@@ -652,6 +657,14 @@ export function DashboardApp(d: TradingDashboard) {
                         })
                       )
                     }
+                    onEnableAsEma={(symbol, brokerType) =>
+                      runInstrumentAction(symbol, brokerType, () =>
+                        enableInstrumentAsEmaMutation.mutateAsync({
+                          symbol,
+                          brokerType,
+                        })
+                      )
+                    }
                     onUpdateInstrument={async (
                       symbol,
                       brokerType,
@@ -665,10 +678,6 @@ export function DashboardApp(d: TradingDashboard) {
                         })
                       );
                     }}
-                    onGenerateWebhook={(instrumentId) =>
-                      generateWebhookMutation.mutate(instrumentId)
-                    }
-                    generatingWebhook={generateWebhookMutation.isPending}
                   />
                 </Panel>
               </>
@@ -874,29 +883,6 @@ export function DashboardApp(d: TradingDashboard) {
                   >
                     Remove all
                   </ButtonGhost>
-                </div>
-                <div className='mt-5 rounded-xl border border-border bg-background/40 p-4'>
-                  <h3 className='text-sm font-semibold text-foreground'>
-                    TradingView webhook
-                  </h3>
-                  <p className='mt-1 text-xs text-muted-foreground'>
-                    Use this secret in TradingView alerts. Select TradingView as
-                    the signal source on an automation first.
-                  </p>
-                  <ButtonGhost
-                    className='mt-3'
-                    disabled={webhookSecretMutation.isPending}
-                    onClick={() => webhookSecretMutation.mutate()}
-                  >
-                    {webhookSecretMutation.isPending
-                      ? 'Generating…'
-                      : 'Show webhook secret'}
-                  </ButtonGhost>
-                  {webhookSecret && (
-                    <p className='mt-3 break-all rounded-lg border border-border bg-background p-3 font-mono text-xs text-foreground'>
-                      {webhookSecret}
-                    </p>
-                  )}
                 </div>
                 <div className='mt-4'>
                   <button
@@ -1134,6 +1120,12 @@ export function DashboardApp(d: TradingDashboard) {
                     <MiniStat
                       label='Active (all users)'
                       value={String(health?.trading.activeInstruments ?? 0)}
+                    />
+                    <MiniStat
+                      label='Automated entries (all users)'
+                      value={String(
+                        health?.trading.automatedEntriesEnabledInstruments ?? 0
+                      )}
                     />
                   </div>
                 </Panel>

@@ -45,7 +45,6 @@ function useTradingDashboardInternal() {
     password: '',
   });
   const [tokenInput, setTokenInput] = useState('');
-  const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
   const [mt5AccountForm, setMt5AccountForm] = useState({
     label: '',
     login: '',
@@ -123,18 +122,6 @@ function useTradingDashboardInternal() {
       });
       setGlobalSuccess('MT5 account removed');
       setTimeout(() => setGlobalSuccess(null), 3000);
-    },
-    onError: (error) => setGlobalError(extractErrorMessage(error)),
-  });
-
-  const generateWebhookMutation = useMutation({
-    mutationFn: async (instrumentId: string) =>
-      (await tradingAPI.generateInstrumentWebhook(instrumentId)).data,
-    onSuccess: (data) => {
-      setGlobalSuccess(
-        `Webhook URL: ${data.webhookUrl} | Secret: ${data.secret}`
-      );
-      setTimeout(() => setGlobalSuccess(null), 15000);
     },
     onError: (error) => setGlobalError(extractErrorMessage(error)),
   });
@@ -346,12 +333,6 @@ function useTradingDashboardInternal() {
     onError: (error) => setGlobalError(extractErrorMessage(error)),
   });
 
-  const webhookSecretMutation = useMutation({
-    mutationFn: async () => (await tradingAPI.getWebhookSecret()).data.secret,
-    onSuccess: (secret) => setWebhookSecret(secret),
-    onError: (error) => setGlobalError(extractErrorMessage(error)),
-  });
-
   const saveTokenMutation = useMutation({
     mutationFn: async (payload: {
       derivToken?: string;
@@ -490,13 +471,80 @@ function useTradingDashboardInternal() {
         queryKey: ['dashboard', 'instruments'],
       });
       await queryClient.invalidateQueries({
+        queryKey: ['dashboard', 'health'],
+      });
+      await queryClient.invalidateQueries({
         queryKey: ['dashboard', 'instrument-state'],
       });
       await queryClient.refetchQueries({
         queryKey: ['dashboard', 'instruments'],
       });
       await queryClient.refetchQueries({
+        queryKey: ['dashboard', 'health'],
+      });
+      await queryClient.refetchQueries({
         queryKey: ['dashboard', 'instrument-state'],
+      });
+    },
+    onError: (error) => setGlobalError(extractErrorMessage(error)),
+  });
+
+  const automatedEntriesMutation = useMutation({
+    mutationFn: async ({
+      symbol,
+      brokerType,
+      enabled,
+    }: {
+      symbol: string;
+      brokerType: NonNullable<InstrumentConfig['brokerType']>;
+      enabled: boolean;
+    }) =>
+      (await tradingAPI.setAutomatedEntries(symbol, brokerType, enabled)).data,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['dashboard', 'instruments'],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ['dashboard', 'health'],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ['dashboard', 'instrument-state'],
+      });
+      await queryClient.refetchQueries({
+        queryKey: ['dashboard', 'instruments'],
+      });
+      await queryClient.refetchQueries({
+        queryKey: ['dashboard', 'health'],
+      });
+      await queryClient.refetchQueries({
+        queryKey: ['dashboard', 'instrument-state'],
+      });
+    },
+    onError: (error) => setGlobalError(extractErrorMessage(error)),
+  });
+
+  const enableInstrumentAsEmaMutation = useMutation({
+    mutationFn: async ({
+      symbol,
+      brokerType,
+    }: {
+      symbol: string;
+      brokerType: InstrumentConfig['brokerType'];
+    }) =>
+      (await tradingAPI.enableInstrumentAsEma(symbol, brokerType ?? 'deriv_ws'))
+        .data,
+    onSuccess: async (_data, variables) => {
+      setGlobalError(null);
+      setGlobalSuccess(`${variables.symbol} enabled with EMA signals`);
+      setTimeout(() => setGlobalSuccess(null), 3000);
+      await queryClient.invalidateQueries({
+        queryKey: ['dashboard', 'instruments'],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ['dashboard', 'instrument-state'],
+      });
+      await queryClient.refetchQueries({
+        queryKey: ['dashboard', 'instruments'],
       });
     },
     onError: (error) => setGlobalError(extractErrorMessage(error)),
@@ -710,14 +758,11 @@ function useTradingDashboardInternal() {
     setLoginForm,
     tokenInput,
     setTokenInput,
-    webhookSecret,
-    webhookSecretMutation,
     mt5AccountForm,
     setMt5AccountForm,
     mt5Accounts: (mt5AccountsQuery.data || []) as Mt5Account[],
     createMt5AccountMutation,
     deleteMt5AccountMutation,
-    generateWebhookMutation,
     newInstrument,
     setNewInstrument,
     showAddInstrument,
@@ -731,6 +776,8 @@ function useTradingDashboardInternal() {
     addInstrumentMutation,
     updateInstrumentMutation,
     toggleInstrumentMutation,
+    automatedEntriesMutation,
+    enableInstrumentAsEmaMutation,
     closePositionMutation,
     updatePositionProtectionMutation,
     removeInstrumentMutation,

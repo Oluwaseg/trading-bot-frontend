@@ -88,7 +88,8 @@ export const DEFAULT_NEW_INSTRUMENT: InstrumentConfig = {
   maxRecoverySize: 35,
   multiplier: 100,
   trailingStopDistanceAmount: 0,
-  enabled: true,
+  enabled: false,
+  automatedEntriesEnabled: false,
 };
 
 const DERIV_SYNTHETIC_SYMBOLS =

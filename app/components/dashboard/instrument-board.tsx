@@ -22,12 +22,12 @@ export function InstrumentBoard({
   meta,
   busySymbols,
   onToggle,
+  onSetAutomatedEntries,
   onClose,
   onUpdatePositionProtection,
   onRemove,
   onUpdateInstrument,
-  onGenerateWebhook,
-  generatingWebhook,
+  onEnableAsEma,
 }: {
   rows: InstrumentState[];
   meta: Array<{
@@ -40,6 +40,11 @@ export function InstrumentBoard({
   onToggle: (
     symbol: string,
     brokerType: NonNullable<InstrumentConfig['brokerType']>
+  ) => void;
+  onSetAutomatedEntries: (
+    symbol: string,
+    brokerType: NonNullable<InstrumentConfig['brokerType']>,
+    enabled: boolean
   ) => void;
   onClose: (
     symbol: string,
@@ -63,8 +68,10 @@ export function InstrumentBoard({
     brokerType: NonNullable<InstrumentConfig['brokerType']>,
     updates: Partial<InstrumentConfig>
   ) => Promise<void>;
-  onGenerateWebhook: (instrumentId: string) => void;
-  generatingWebhook: boolean;
+  onEnableAsEma: (
+    symbol: string,
+    brokerType: NonNullable<InstrumentConfig['brokerType']>
+  ) => void;
 }) {
   if (rows.length === 0) {
     return (
@@ -93,6 +100,13 @@ export function InstrumentBoard({
               instrument.config.brokerType ?? 'deriv_ws'
             )
           }
+          onSetAutomatedEntries={(enabled) =>
+            onSetAutomatedEntries(
+              instrument.symbol,
+              instrument.config.brokerType ?? 'deriv_ws',
+              enabled
+            )
+          }
           onClose={() =>
             onClose(
               instrument.symbol,
@@ -119,10 +133,12 @@ export function InstrumentBoard({
               updates
             )
           }
-          onGenerateWebhook={() =>
-            onGenerateWebhook(instrument.config.id || '')
+          onEnableAsEma={() =>
+            onEnableAsEma(
+              instrument.symbol,
+              instrument.config.brokerType ?? 'deriv_ws'
+            )
           }
-          generatingWebhook={generatingWebhook}
         />
       ))}
     </div>
@@ -137,12 +153,12 @@ function InstrumentRow({
   errorStatusCode,
   busy,
   onToggle,
+  onSetAutomatedEntries,
   onClose,
   onUpdatePositionProtection,
   onRemove,
   onSaveEdit,
-  onGenerateWebhook,
-  generatingWebhook,
+  onEnableAsEma,
 }: {
   instrument: InstrumentState;
   syncing: boolean;
@@ -151,6 +167,7 @@ function InstrumentRow({
   errorStatusCode: number | null;
   busy: boolean;
   onToggle: () => void;
+  onSetAutomatedEntries: (enabled: boolean) => void;
   onClose: () => void;
   onUpdatePositionProtection: (payload: {
     contractId: string;
@@ -159,8 +176,7 @@ function InstrumentRow({
   }) => Promise<void>;
   onRemove: () => Promise<void>;
   onSaveEdit: (updates: Partial<InstrumentConfig>) => Promise<void>;
-  onGenerateWebhook: () => void;
-  generatingWebhook: boolean;
+  onEnableAsEma: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -323,6 +339,12 @@ function InstrumentRow({
             EMA {instrument.config.shortEmaPeriod}/
             {instrument.config.longEmaPeriod} • {instrument.config.timeFrame}
           </p>
+          {instrument.config.signalSourceReviewRequired ? (
+            <p className='mt-2 text-xs text-amber-200'>
+              This automation is paused for signal-source review. Enabling it
+              will activate its configured EMA signals.
+            </p>
+          ) : null}
           {instrument.historyNotice ? (
             <p
               className={`mt-2 text-xs ${
@@ -435,21 +457,32 @@ function InstrumentRow({
         </div>
 
         <div className='flex shrink-0 flex-wrap gap-2 lg:flex-col lg:items-stretch'>
+          <label
+            className='flex min-h-9 items-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-medium text-foreground'
+            title='Controls new strategy entries only; position monitoring and risk exits continue when off.'
+          >
+            <input
+              type='checkbox'
+              checked={instrument.config.automatedEntriesEnabled === true}
+              disabled={busy || instrument.config.signalSourceReviewRequired}
+              onChange={(event) => onSetAutomatedEntries(event.target.checked)}
+            />
+            Automated Entries
+          </label>
           <ButtonGhost
             className='lg:min-w-[7rem]'
-            disabled={busy}
+            disabled={busy || instrument.config.signalSourceReviewRequired}
             onClick={onToggle}
           >
             {instrument.config.enabled ? 'Pause' : 'Resume'}
           </ButtonGhost>
-          {instrument.config.signalSource === 'tradingview' &&
-          instrument.config.id ? (
+          {instrument.config.signalSourceReviewRequired ? (
             <ButtonGhost
               className='lg:min-w-[7rem]'
-              disabled={generatingWebhook}
-              onClick={onGenerateWebhook}
+              disabled={busy}
+              onClick={onEnableAsEma}
             >
-              {generatingWebhook ? 'Generating…' : 'Webhook URL'}
+              Review and enable EMA
             </ButtonGhost>
           ) : null}
           <ButtonGhost

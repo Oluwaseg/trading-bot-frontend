@@ -133,6 +133,7 @@ export interface HealthResponse {
     users: number;
     totalInstruments: number;
     activeInstruments: number;
+    automatedEntriesEnabledInstruments: number;
     monitoringIntervalMs: number;
     riskMonitoringIntervalMs?: number;
   };
@@ -262,8 +263,7 @@ export interface InstrumentConfig {
   symbol: string;
   brokerType?: BrokerType;
   mt5AccountId?: string | null;
-  signalSource?: 'ema' | 'tradingview';
-  webhookConfigured?: boolean;
+  signalSourceReviewRequired?: boolean;
   assetClass?: AssetClassType;
   shortEmaPeriod: number;
   longEmaPeriod: number;
@@ -282,6 +282,7 @@ export interface InstrumentConfig {
   tradeCooldownSeconds?: number;
   minEmaSeparationBps?: number;
   enabled: boolean;
+  automatedEntriesEnabled: boolean;
   createdAt?: string | null;
   updatedAt?: string | null;
 }
@@ -368,8 +369,6 @@ export const tradingAPI = {
   },
 
   getTokenStatus: () => apiClient.get<TokenStatus>('/user/token'),
-  getWebhookSecret: () =>
-    apiClient.get<{ secret: string }>('/user/webhook-secret'),
   saveToken: (payload: BrokerCredentialPayload) =>
     apiClient.put<{
       success: boolean;
@@ -389,10 +388,6 @@ export const tradingAPI = {
     apiClient.delete<{ deleted: boolean }>(`/mt5/accounts/${accountId}`),
 
   getInstruments: () => apiClient.get<InstrumentConfig[]>('/instruments'),
-  generateInstrumentWebhook: (instrumentId: string) =>
-    apiClient.post<{ secret: string; webhookUrl: string }>(
-      `/instruments/${instrumentId}/webhook-secret`
-    ),
   getInstrumentState: (symbol: string, brokerType = 'deriv_ws') =>
     apiClient.get<InstrumentState>(
       `/instruments/${symbol}/state?brokerType=${encodeURIComponent(brokerType)}`
@@ -423,6 +418,26 @@ export const tradingAPI = {
   toggleInstrument: (symbol: string, brokerType = 'deriv_ws') =>
     apiClient.patch<{ success: boolean; message: string; enabled: boolean }>(
       `/instruments/${symbol}/toggle?brokerType=${encodeURIComponent(brokerType)}`
+    ),
+  setAutomatedEntries: (
+    symbol: string,
+    brokerType: BrokerType,
+    enabled: boolean
+  ) =>
+    apiClient.patch<{
+      success: boolean;
+      instrument: InstrumentConfig;
+    }>(
+      `/instruments/${symbol}/automated-entries?brokerType=${encodeURIComponent(brokerType)}`,
+      { automatedEntriesEnabled: enabled }
+    ),
+  enableInstrumentAsEma: (symbol: string, brokerType = 'deriv_ws') =>
+    apiClient.patch<{
+      success: boolean;
+      message: string;
+      instrument: InstrumentConfig;
+    }>(
+      `/instruments/${symbol}/enable-as-ema?brokerType=${encodeURIComponent(brokerType)}`
     ),
   closeInstrumentPosition: (symbol: string, brokerType = 'deriv_ws') =>
     apiClient.post<{ success: boolean; contracts_closed: number }>(
