@@ -8,6 +8,8 @@ import { useMemo, useRef, useState } from 'react';
 import type {
   DerivAccountRow,
   Mt5Account,
+  Mt5Connector,
+  Mt5PairingCode,
   Mt5WorkerStatus,
 } from '../api-client';
 import {
@@ -112,6 +114,68 @@ function useTradingDashboardInternal() {
       refetchInterval: 10000,
       ...poll,
     })),
+  });
+
+  const mt5ConnectorQueries = useQueries({
+    queries: (mt5AccountsQuery.data || []).map((account) => ({
+      queryKey: ['dashboard', 'mt5-connectors', account.id],
+      queryFn: async () =>
+        (await tradingAPI.getMt5Connectors(account.id)).data.connectors,
+      enabled: !!currentUser,
+      refetchInterval: 10000,
+      ...poll,
+    })),
+  });
+
+  const [mt5PairingCodes, setMt5PairingCodes] = useState<
+    Record<string, Mt5PairingCode | null>
+  >({});
+  const [mt5PairingErrors, setMt5PairingErrors] = useState<
+    Record<string, string | null>
+  >({});
+  const [pairingCodePending, setPairingCodePending] = useState<
+    Record<string, boolean>
+  >({});
+
+  const requestMt5PairingCode = async (accountId: string) => {
+    setPairingCodePending((current) => ({ ...current, [accountId]: true }));
+    setMt5PairingErrors((current) => ({ ...current, [accountId]: null }));
+    setMt5PairingCodes((current) => ({ ...current, [accountId]: null }));
+    try {
+      const result = (await tradingAPI.createMt5PairingCode(accountId)).data;
+      setMt5PairingCodes((current) => ({ ...current, [accountId]: result }));
+    } catch (error) {
+      setMt5PairingErrors((current) => ({
+        ...current,
+        [accountId]: extractErrorMessage(error),
+      }));
+    } finally {
+      setPairingCodePending((current) => ({
+        ...current,
+        [accountId]: false,
+      }));
+    }
+  };
+
+  const revokeMt5ConnectorMutation = useMutation({
+    mutationFn: async ({
+      accountId,
+      connectorId,
+    }: {
+      accountId: string;
+      connectorId: string;
+    }) => (await tradingAPI.revokeMt5Connector(accountId, connectorId)).data,
+    onSuccess: async (_data, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['dashboard', 'mt5-connectors', variables.accountId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['dashboard', 'mt5-worker-status', variables.accountId],
+        }),
+      ]);
+    },
+    onError: (error) => setGlobalError(extractErrorMessage(error)),
   });
 
   const createMt5AccountMutation = useMutation({
@@ -784,6 +848,18 @@ function useTradingDashboardInternal() {
       isError: query.isError,
       refetch: query.refetch,
     })),
+    mt5ConnectorQueries: mt5ConnectorQueries.map((query) => ({
+      data: query.data as Mt5Connector[] | undefined,
+      isPending: query.isPending,
+      isFetching: query.isFetching,
+      isError: query.isError,
+      refetch: query.refetch,
+    })),
+    mt5PairingCodes,
+    mt5PairingErrors,
+    pairingCodePending,
+    requestMt5PairingCode,
+    revokeMt5ConnectorMutation,
     createMt5AccountMutation,
     deleteMt5AccountMutation,
     newInstrument,

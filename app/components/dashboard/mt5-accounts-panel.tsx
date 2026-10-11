@@ -1,7 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import type { Mt5Account, Mt5WorkerStatus } from '../../api-client';
+import { useEffect, useState } from 'react';
+import type {
+  Mt5Account,
+  Mt5Connector,
+  Mt5PairingCode,
+  Mt5WorkerStatus,
+} from '../../api-client';
 import { formatDate } from '../../lib/format';
 import {
   Alert,
@@ -27,9 +32,21 @@ interface AccountStatusQuery {
   refetch: () => Promise<unknown>;
 }
 
+interface AccountConnectorQuery {
+  data?: Mt5Connector[];
+  isPending: boolean;
+  isFetching: boolean;
+  isError: boolean;
+  refetch: () => Promise<unknown>;
+}
+
 export function Mt5AccountsPanel({
   accounts,
   statuses,
+  connectorsByAccount,
+  pairingCodes,
+  pairingErrors,
+  pairingCodePending,
   trackedPositionsByAccount,
   accountsLoading,
   accountsError,
@@ -40,9 +57,16 @@ export function Mt5AccountsPanel({
   onAdd,
   onRemove,
   onRefresh,
+  onRequestPairingCode,
+  onRevokeConnector,
+  revokingConnectorId,
 }: {
   accounts: Mt5Account[];
   statuses: AccountStatusQuery[];
+  connectorsByAccount: AccountConnectorQuery[];
+  pairingCodes: Record<string, Mt5PairingCode | null>;
+  pairingErrors: Record<string, string | null>;
+  pairingCodePending: Record<string, boolean>;
   trackedPositionsByAccount: Record<string, number>;
   accountsLoading: boolean;
   accountsError: boolean;
@@ -53,10 +77,19 @@ export function Mt5AccountsPanel({
   onAdd: () => void;
   onRemove: (accountId: string) => void;
   onRefresh: () => void;
+  onRequestPairingCode: (accountId: string) => void;
+  onRevokeConnector: (accountId: string, connectorId: string) => void;
+  revokingConnectorId: string | null;
 }) {
   const [expandedAccountId, setExpandedAccountId] = useState<string | null>(
     null
   );
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   return (
     <div className='space-y-5'>
@@ -92,7 +125,20 @@ export function Mt5AccountsPanel({
         <div className='divide-y divide-border'>
           {accounts.map((account, index) => {
             const statusQuery = statuses[index];
+            const connectorQuery = connectorsByAccount[index];
             const status = statusQuery?.data;
+            const pairingCode = pairingCodes[account.id];
+            const pairingCodeExpired = pairingCode
+              ? new Date(pairingCode.expiresAt).getTime() <= now
+              : false;
+            const pairingSecondsRemaining = pairingCode
+              ? Math.max(
+                  0,
+                  Math.ceil(
+                    (new Date(pairingCode.expiresAt).getTime() - now) / 1000
+                  )
+                )
+              : 0;
             const terminalConnected = status?.mt5.connected === true;
             const workerOnline = status?.state === 'online';
             const connectionLabel = statusQuery?.isError
@@ -130,6 +176,19 @@ export function Mt5AccountsPanel({
                     </p>
                   </div>
                   <div className='flex shrink-0 gap-2'>
+                    <ButtonPrimary
+                      disabled={pairingCodePending[account.id] === true}
+                      onClick={() => {
+                        setExpandedAccountId(account.id);
+                        onRequestPairingCode(account.id);
+                      }}
+                    >
+                      {pairingCodePending[account.id]
+                        ? 'Creating code…'
+                        : pairingCode && !pairingCodeExpired
+                          ? 'Create fresh code'
+                          : 'Pair connector'}
+                    </ButtonPrimary>
                     <ButtonGhost
                       onClick={() => {
                         void statusQuery?.refetch();
@@ -257,6 +316,140 @@ export function Mt5AccountsPanel({
                         </p>
                       )}
                     </div>
+                    <div className='border-t border-border pt-3'>
+                      <div className='flex flex-wrap items-center justify-between gap-3'>
+                        <div>
+                          <p className='text-xs font-semibold uppercase text-muted-foreground'>
+                            Paired devices
+                          </p>
+                          <p className='mt-1 text-xs text-muted-foreground'>
+                            Pair only through the official Profit Pilot
+                            Connector. The temporary code is not a device
+                            credential.
+                          </p>
+                        </div>
+                      </div>
+
+                      {pairingErrors[account.id] ? (
+                        <Alert tone='error' className='mt-3'>
+                          {pairingErrors[account.id]}
+                        </Alert>
+                      ) : null}
+
+                      {pairingCode ? (
+                        <div
+                          className={`mt-3 rounded-lg border p-3 ${
+                            pairingCodeExpired
+                              ? 'border-border bg-muted/40'
+                              : 'border-primary/40 bg-primary/5'
+                          }`}
+                          aria-live='polite'
+                        >
+                          {pairingCodeExpired ? (
+                            <p className='text-sm font-medium text-muted-foreground'>
+                              This pairing code has expired. Request a fresh
+                              code to continue.
+                            </p>
+                          ) : (
+                            <>
+                              <p className='text-xs text-muted-foreground'>
+                                Temporary pairing code · expires in{' '}
+                                {formatCountdown(pairingSecondsRemaining)}
+                              </p>
+                              <p className='mt-2 select-all font-mono text-xl font-semibold tracking-[0.12em] text-foreground'>
+                                {pairingCode.code.match(/.{1,4}/g)?.join(' ')}
+                              </p>
+                              <p className='mt-2 text-xs text-muted-foreground'>
+                                Enter this code in the official Profit Pilot
+                                Connector before it expires. Generating a code
+                                does not mean a device is connected.
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      ) : null}
+
+                      <div className='mt-3'>
+                        {connectorQuery?.isPending ? (
+                          <p className='text-sm text-muted-foreground'>
+                            Loading paired devices…
+                          </p>
+                        ) : connectorQuery?.isError ? (
+                          <div className='space-y-2'>
+                            <p className='text-sm text-destructive'>
+                              Paired devices could not be loaded.
+                            </p>
+                            <ButtonGhost
+                              onClick={() => void connectorQuery.refetch()}
+                              disabled={connectorQuery.isFetching}
+                            >
+                              {connectorQuery.isFetching
+                                ? 'Retrying…'
+                                : 'Retry device list'}
+                            </ButtonGhost>
+                          </div>
+                        ) : connectorQuery?.data?.length ? (
+                          <div className='divide-y divide-border'>
+                            {connectorQuery.data.map((connector) => (
+                              <div
+                                key={connector.id}
+                                className='flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between'
+                              >
+                                <div className='flex flex-wrap items-center gap-2'>
+                                  <span className='text-sm font-medium text-foreground'>
+                                    {connector.name}
+                                  </span>
+                                  <StatusBadge
+                                    label={
+                                      connector.revoked
+                                        ? 'Revoked'
+                                        : connector.online
+                                          ? 'Online'
+                                          : 'Offline'
+                                    }
+                                    tone={
+                                      connector.online && !connector.revoked
+                                        ? 'good'
+                                        : 'muted'
+                                    }
+                                  />
+                                  <span className='text-xs text-muted-foreground'>
+                                    Last seen {formatDate(connector.lastSeenAt)}
+                                  </span>
+                                </div>
+                                {!connector.revoked ? (
+                                  <ButtonGhost
+                                    disabled={
+                                      revokingConnectorId === connector.id
+                                    }
+                                    onClick={() => {
+                                      if (
+                                        window.confirm(
+                                          `Revoke ${connector.name}? This will disconnect it and prevent it from reconnecting.`
+                                        )
+                                      ) {
+                                        onRevokeConnector(
+                                          account.id,
+                                          connector.id
+                                        );
+                                      }
+                                    }}
+                                  >
+                                    {revokingConnectorId === connector.id
+                                      ? 'Revoking…'
+                                      : 'Revoke'}
+                                  </ButtonGhost>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className='text-sm text-muted-foreground'>
+                            No devices paired to this account.
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ) : null}
               </article>
@@ -351,4 +544,10 @@ function formatTradeMode(mode: number | null) {
   if (mode === 1) return 'Contest';
   if (mode === 2) return 'Real';
   return `Other (${mode})`;
+}
+
+function formatCountdown(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
 }

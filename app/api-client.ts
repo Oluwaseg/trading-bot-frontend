@@ -119,6 +119,21 @@ export interface Mt5WorkerStatus {
   };
 }
 
+export interface Mt5PairingCode {
+  code: string;
+  expiresAt: string;
+}
+
+export interface Mt5Connector {
+  id: string;
+  name: string;
+  createdAt: string;
+  credentialCreatedAt: string;
+  lastSeenAt: string | null;
+  revoked: boolean;
+  online: boolean;
+}
+
 export interface DerivAccountRow {
   account_id: string;
   balance: string;
@@ -410,6 +425,16 @@ export const tradingAPI = {
     apiClient.delete<{ deleted: boolean }>(`/mt5/accounts/${accountId}`),
   getMt5WorkerStatus: (accountId: string) =>
     apiClient.get<Mt5WorkerStatus>(`/mt5/accounts/${accountId}/worker-status`),
+  createMt5PairingCode: (accountId: string) =>
+    apiClient.post<Mt5PairingCode>(`/mt5/accounts/${accountId}/pairing-code`),
+  getMt5Connectors: (accountId: string) =>
+    apiClient.get<{ connectors: Mt5Connector[] }>(
+      `/mt5/accounts/${accountId}/connectors`
+    ),
+  revokeMt5Connector: (accountId: string, connectorId: string) =>
+    apiClient.delete<{ revoked: boolean }>(
+      `/mt5/accounts/${accountId}/connectors/${connectorId}`
+    ),
 
   getInstruments: () => apiClient.get<InstrumentConfig[]>('/instruments'),
   getInstrumentState: (symbol: string, brokerType = 'deriv_ws') =>

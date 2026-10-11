@@ -701,6 +701,10 @@ export function DashboardApp(d: TradingDashboard) {
               <Mt5AccountsPanel
                 accounts={mt5Accounts}
                 statuses={d.mt5WorkerStatusQueries}
+                connectorsByAccount={d.mt5ConnectorQueries}
+                pairingCodes={d.mt5PairingCodes}
+                pairingErrors={d.mt5PairingErrors}
+                pairingCodePending={d.pairingCodePending}
                 trackedPositionsByAccount={Object.fromEntries(
                   mt5Accounts.map((account) => [
                     account.id,
@@ -722,11 +726,29 @@ export function DashboardApp(d: TradingDashboard) {
                 onRemove={(accountId) =>
                   deleteMt5AccountMutation.mutate(accountId)
                 }
+                onRequestPairingCode={(accountId) => {
+                  void d.requestMt5PairingCode(accountId);
+                }}
+                onRevokeConnector={(accountId, connectorId) =>
+                  d.revokeMt5ConnectorMutation.mutate({
+                    accountId,
+                    connectorId,
+                  })
+                }
+                revokingConnectorId={
+                  d.revokeMt5ConnectorMutation.isPending
+                    ? (d.revokeMt5ConnectorMutation.variables?.connectorId ??
+                      null)
+                    : null
+                }
                 onRefresh={() => {
                   void (async () => {
                     await d.mt5AccountsQuery.refetch();
                     await Promise.all(
-                      d.mt5WorkerStatusQueries.map((query) => query.refetch())
+                      [
+                        ...d.mt5WorkerStatusQueries,
+                        ...d.mt5ConnectorQueries,
+                      ].map((query) => query.refetch())
                     );
                   })();
                 }}
