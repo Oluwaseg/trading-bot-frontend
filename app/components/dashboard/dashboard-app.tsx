@@ -18,6 +18,7 @@ import {
   TIMEFRAME_OPTIONS_BY_BROKER,
 } from '../../lib/trading-constants';
 import { InstrumentBoard } from './instrument-board';
+import { Mt5AccountsPanel } from './mt5-accounts-panel';
 import {
   Alert,
   ButtonGhost,
@@ -32,7 +33,13 @@ import {
   Tooltip,
 } from './ui-primitives';
 
-type MainSection = 'overview' | 'token' | 'performance' | 'activity' | 'admin';
+type MainSection =
+  | 'overview'
+  | 'mt5-accounts'
+  | 'token'
+  | 'performance'
+  | 'activity'
+  | 'admin';
 
 export function DashboardApp(d: TradingDashboard) {
   const [section, setSection] = useState<MainSection>('overview');
@@ -183,6 +190,12 @@ export function DashboardApp(d: TradingDashboard) {
             Overview
           </NavItem>
           <NavItem
+            active={section === 'mt5-accounts'}
+            onClick={() => setSection('mt5-accounts')}
+          >
+            MT5 Accounts
+          </NavItem>
+          <NavItem
             active={section === 'token'}
             onClick={() => setSection('token')}
           >
@@ -263,6 +276,7 @@ export function DashboardApp(d: TradingDashboard) {
             {(
               [
                 ['overview', 'Overview'],
+                ['mt5-accounts', 'MT5 Accounts'],
                 ['token', 'Connection / Token'],
                 ['performance', 'Stats'],
                 ['activity', 'Logs'],
@@ -683,6 +697,42 @@ export function DashboardApp(d: TradingDashboard) {
               </>
             )}
 
+            {section === 'mt5-accounts' && (
+              <Mt5AccountsPanel
+                accounts={mt5Accounts}
+                statuses={d.mt5WorkerStatusQueries}
+                trackedPositionsByAccount={Object.fromEntries(
+                  mt5Accounts.map((account) => [
+                    account.id,
+                    instrumentStates.filter(
+                      (instrument) =>
+                        instrument.config.brokerType === 'mt5' &&
+                        instrument.config.mt5AccountId === account.id &&
+                        instrument.openPosition !== null
+                    ).length,
+                  ])
+                )}
+                accountsLoading={d.mt5AccountsQuery.isPending}
+                accountsError={d.mt5AccountsQuery.isError}
+                form={mt5AccountForm}
+                setForm={setMt5AccountForm}
+                adding={createMt5AccountMutation.isPending}
+                removing={deleteMt5AccountMutation.isPending}
+                onAdd={() => createMt5AccountMutation.mutate(mt5AccountForm)}
+                onRemove={(accountId) =>
+                  deleteMt5AccountMutation.mutate(accountId)
+                }
+                onRefresh={() => {
+                  void (async () => {
+                    await d.mt5AccountsQuery.refetch();
+                    await Promise.all(
+                      d.mt5WorkerStatusQueries.map((query) => query.refetch())
+                    );
+                  })();
+                }}
+              />
+            )}
+
             {section === 'token' && (
               <Panel
                 title='Broker credentials'
@@ -745,117 +795,19 @@ export function DashboardApp(d: TradingDashboard) {
                     </div>
                   </div>
 
-                  <div className='rounded-xl border border-border bg-background/40 p-4'>
-                    <div className='flex items-start justify-between gap-3'>
-                      <div>
-                        <h3 className='text-sm font-semibold text-foreground'>
-                          MT5 accounts
-                        </h3>
-                        <p className='mt-1 text-sm text-muted-foreground'>
-                          Connect multiple broker accounts. Passwords are
-                          encrypted and never displayed.
-                        </p>
-                      </div>
-                      <span className='rounded-full bg-muted px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground'>
-                        {mt5Accounts.length} connected
-                      </span>
+                  <div className='flex items-center justify-between gap-3 rounded-xl border border-border bg-background/40 p-4'>
+                    <div>
+                      <h3 className='text-sm font-semibold text-foreground'>
+                        MT5 accounts
+                      </h3>
+                      <p className='mt-1 text-sm text-muted-foreground'>
+                        {mt5Accounts.length} configured account
+                        {mt5Accounts.length === 1 ? '' : 's'}
+                      </p>
                     </div>
-                    <div className='mt-4 space-y-2'>
-                      {mt5Accounts.length === 0 ? (
-                        <p className='rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground'>
-                          No MT5 accounts connected yet.
-                        </p>
-                      ) : (
-                        mt5Accounts.map((account) => (
-                          <div
-                            key={account.id}
-                            className='flex items-center justify-between gap-3 rounded-lg border border-border p-3'
-                          >
-                            <div className='min-w-0'>
-                              <p className='truncate text-sm font-medium text-foreground'>
-                                {account.label}
-                              </p>
-                              <p className='text-xs text-muted-foreground'>
-                                {account.server} · account {account.login}
-                              </p>
-                            </div>
-                            <ButtonGhost
-                              disabled={deleteMt5AccountMutation.isPending}
-                              onClick={() =>
-                                deleteMt5AccountMutation.mutate(account.id)
-                              }
-                            >
-                              Remove
-                            </ButtonGhost>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                    <div className='mt-4 grid gap-3'>
-                      <input
-                        type='text'
-                        value={mt5AccountForm.label}
-                        onChange={(e) =>
-                          setMt5AccountForm((prev) => ({
-                            ...prev,
-                            label: e.target.value,
-                          }))
-                        }
-                        placeholder='Account label, e.g. MT5 demo'
-                        className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
-                      />
-                      <input
-                        type='text'
-                        value={mt5AccountForm.login}
-                        onChange={(e) =>
-                          setMt5AccountForm((prev) => ({
-                            ...prev,
-                            login: e.target.value,
-                          }))
-                        }
-                        placeholder='MT5 login number'
-                        className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
-                      />
-                      <input
-                        type='password'
-                        value={mt5AccountForm.password}
-                        onChange={(e) =>
-                          setMt5AccountForm((prev) => ({
-                            ...prev,
-                            password: e.target.value,
-                          }))
-                        }
-                        placeholder='MT5 password'
-                        className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
-                      />
-                      <input
-                        type='text'
-                        value={mt5AccountForm.server}
-                        onChange={(e) =>
-                          setMt5AccountForm((prev) => ({
-                            ...prev,
-                            server: e.target.value,
-                          }))
-                        }
-                        placeholder='MT5 server, e.g. MetaTrader-Demo'
-                        className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
-                      />
-                      <ButtonPrimary
-                        disabled={
-                          !mt5AccountForm.login ||
-                          !mt5AccountForm.password ||
-                          !mt5AccountForm.server ||
-                          createMt5AccountMutation.isPending
-                        }
-                        onClick={() =>
-                          createMt5AccountMutation.mutate(mt5AccountForm)
-                        }
-                      >
-                        {createMt5AccountMutation.isPending
-                          ? 'Connecting…'
-                          : 'Connect MT5 account'}
-                      </ButtonPrimary>
-                    </div>
+                    <ButtonGhost onClick={() => setSection('mt5-accounts')}>
+                      Manage accounts
+                    </ButtonGhost>
                   </div>
                 </div>
 

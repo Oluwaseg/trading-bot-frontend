@@ -97,6 +97,28 @@ export interface Mt5Account {
   updatedAt?: string | null;
 }
 
+export interface Mt5WorkerStatus {
+  accountId: string;
+  state: 'online' | 'offline';
+  workerId: string | null;
+  connectedAt: string | null;
+  lastSeen: string | null;
+  disconnectedAt: string | null;
+  mt5: {
+    state: 'available' | 'unavailable';
+    connected: boolean | null;
+    tradeAllowed: boolean | null;
+    login: number | string | null;
+    server: string | null;
+    currency: string | null;
+    balance: number | null;
+    equity: number | null;
+    tradeMode: number | null;
+    checkedAt: string | null;
+    reason: string | null;
+  };
+}
+
 export interface DerivAccountRow {
   account_id: string;
   balance: string;
@@ -386,6 +408,8 @@ export const tradingAPI = {
   }) => apiClient.post<{ account: Mt5Account }>('/mt5/accounts', payload),
   deleteMt5Account: (accountId: string) =>
     apiClient.delete<{ deleted: boolean }>(`/mt5/accounts/${accountId}`),
+  getMt5WorkerStatus: (accountId: string) =>
+    apiClient.get<Mt5WorkerStatus>(`/mt5/accounts/${accountId}/worker-status`),
 
   getInstruments: () => apiClient.get<InstrumentConfig[]>('/instruments'),
   getInstrumentState: (symbol: string, brokerType = 'deriv_ws') =>

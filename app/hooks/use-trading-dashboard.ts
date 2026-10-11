@@ -5,7 +5,11 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useMemo, useRef, useState } from 'react';
-import type { DerivAccountRow, Mt5Account } from '../api-client';
+import type {
+  DerivAccountRow,
+  Mt5Account,
+  Mt5WorkerStatus,
+} from '../api-client';
 import {
   ApiError,
   tradingAPI,
@@ -99,6 +103,17 @@ function useTradingDashboardInternal() {
     ...poll,
   });
 
+  const mt5WorkerStatusQueries = useQueries({
+    queries: (mt5AccountsQuery.data || []).map((account) => ({
+      queryKey: ['dashboard', 'mt5-worker-status', account.id],
+      queryFn: async () =>
+        (await tradingAPI.getMt5WorkerStatus(account.id)).data,
+      enabled: !!currentUser,
+      refetchInterval: 10000,
+      ...poll,
+    })),
+  });
+
   const createMt5AccountMutation = useMutation({
     mutationFn: async (payload: typeof mt5AccountForm) =>
       (await tradingAPI.createMt5Account(payload)).data,
@@ -107,7 +122,7 @@ function useTradingDashboardInternal() {
       await queryClient.invalidateQueries({
         queryKey: ['dashboard', 'mt5-accounts'],
       });
-      setGlobalSuccess('MT5 account connected');
+      setGlobalSuccess('MT5 account configured');
       setTimeout(() => setGlobalSuccess(null), 3000);
     },
     onError: (error) => setGlobalError(extractErrorMessage(error)),
@@ -761,6 +776,14 @@ function useTradingDashboardInternal() {
     mt5AccountForm,
     setMt5AccountForm,
     mt5Accounts: (mt5AccountsQuery.data || []) as Mt5Account[],
+    mt5AccountsQuery,
+    mt5WorkerStatusQueries: mt5WorkerStatusQueries.map((query) => ({
+      data: query.data as Mt5WorkerStatus | undefined,
+      isPending: query.isPending,
+      isFetching: query.isFetching,
+      isError: query.isError,
+      refetch: query.refetch,
+    })),
     createMt5AccountMutation,
     deleteMt5AccountMutation,
     newInstrument,
