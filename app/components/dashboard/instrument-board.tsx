@@ -288,7 +288,7 @@ function InstrumentRow({
           : 'border-border hover:border-border/80'
       }`}
     >
-      <div className='flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between'>
+      <div className='flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between'>
         <div className='min-w-0 flex-1'>
           <div className='flex flex-wrap items-center gap-2'>
             <h3 className='text-lg font-semibold tracking-tight'>
@@ -362,7 +362,7 @@ function InstrumentRow({
             </p>
           ) : null}
 
-          <div className='mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7'>
+          <div className='mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6'>
             <MiniStat label='Trend' value={trend} />
             <MiniStat label='Signal' value={signal} />
             <MiniStat
@@ -456,7 +456,7 @@ function InstrumentRow({
           </div>
         </div>
 
-        <div className='flex shrink-0 flex-wrap gap-2 lg:flex-col lg:items-stretch'>
+        <div className='flex min-w-0 flex-wrap gap-2 xl:w-36 xl:shrink-0 xl:flex-col xl:items-stretch'>
           <label
             className='flex min-h-9 items-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-medium text-foreground'
             title='Controls new strategy entries only; position monitoring and risk exits continue when off.'
@@ -470,7 +470,7 @@ function InstrumentRow({
             Automated Entries
           </label>
           <ButtonGhost
-            className='lg:min-w-[7rem]'
+            className='xl:min-w-28'
             disabled={busy || instrument.config.signalSourceReviewRequired}
             onClick={onToggle}
           >
@@ -478,7 +478,7 @@ function InstrumentRow({
           </ButtonGhost>
           {instrument.config.signalSourceReviewRequired ? (
             <ButtonGhost
-              className='lg:min-w-[7rem]'
+              className='xl:min-w-28'
               disabled={busy}
               onClick={onEnableAsEma}
             >
@@ -486,21 +486,21 @@ function InstrumentRow({
             </ButtonGhost>
           ) : null}
           <ButtonGhost
-            className='lg:min-w-[7rem]'
+            className='xl:min-w-28'
             disabled={busy || editing}
             onClick={openEdit}
           >
             Edit
           </ButtonGhost>
           <ButtonPrimary
-            className='bg-destructive text-destructive-foreground hover:opacity-90 lg:min-w-[7rem]'
+            className='bg-destructive text-destructive-foreground hover:opacity-90 xl:min-w-28'
             disabled={busy || !open}
             onClick={onClose}
           >
             {open ? 'Sell / close' : 'No position'}
           </ButtonPrimary>
           <ButtonDangerOutline
-            className='lg:min-w-[7rem]'
+            className='xl:min-w-28'
             disabled={busy}
             onClick={() => setConfirmDelete(true)}
           >

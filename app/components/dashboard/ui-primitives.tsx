@@ -39,15 +39,15 @@ export function Panel({
 }) {
   return (
     <section
-      className={`mt-4 rounded-xl border border-border bg-card/80 shadow-sm ${className}`}
+      className={`mt-4 min-w-0 rounded-xl border border-border bg-card/80 shadow-sm ${className}`}
     >
-      <div className='flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4'>
+      <div className='flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5 sm:py-4'>
         <h2 className='text-base font-semibold tracking-tight text-foreground'>
           {title}
         </h2>
         {actions}
       </div>
-      <div className='px-5 py-4'>{children}</div>
+      <div className='min-w-0 px-4 py-4 sm:px-5'>{children}</div>
     </section>
   );
 }
@@ -62,11 +62,11 @@ export function Kpi({
   hint: string;
 }) {
   return (
-    <div className='rounded-xl border border-border bg-card/60 px-4 py-3'>
-      <p className='text-[11px] font-medium uppercase tracking-wider text-muted-foreground'>
+    <div className='min-w-0 rounded-xl border border-border bg-card/60 px-4 py-3'>
+      <p className='text-[11px] font-medium leading-snug uppercase tracking-wider text-muted-foreground'>
         {label}
       </p>
-      <p className='mt-1 text-2xl font-semibold tabular-nums text-foreground'>
+      <p className='mt-1 wrap-break-word text-xl font-semibold tabular-nums text-foreground sm:text-2xl'>
         {value}
       </p>
       <p className='mt-0.5 text-xs text-muted-foreground'>{hint}</p>
@@ -76,11 +76,13 @@ export function Kpi({
 
 export function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className='rounded-lg border border-border bg-background/50 px-3 py-2.5'>
-      <p className='text-[10px] font-medium uppercase tracking-wide text-muted-foreground'>
+    <div className='min-w-0 rounded-lg border border-border bg-background/50 px-3 py-2.5'>
+      <p className='text-[10px] font-medium leading-snug uppercase tracking-wide text-muted-foreground'>
         {label}
       </p>
-      <p className='mt-0.5 text-sm font-medium text-foreground'>{value}</p>
+      <p className='mt-0.5 wrap-break-word text-sm font-medium text-foreground'>
+        {value}
+      </p>
     </div>
   );
 }
@@ -236,6 +238,7 @@ export function NavItem({
     <button
       type='button'
       onClick={onClick}
+      aria-current={active ? 'page' : undefined}
       className={`flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-medium transition ${
         active
           ? 'bg-sidebar-accent text-sidebar-accent-foreground'

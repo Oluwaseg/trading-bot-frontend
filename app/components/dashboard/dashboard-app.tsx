@@ -167,7 +167,7 @@ export function DashboardApp(d: TradingDashboard) {
 
   return (
     <div className='flex min-h-screen bg-background text-foreground'>
-      <aside className='hidden w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar px-4 py-5 md:flex'>
+      <aside className='sticky top-0 hidden h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar px-4 py-5 md:flex'>
         <div className='flex items-center gap-3 px-2'>
           <div className='flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-sm font-black text-primary-foreground'>
             P
@@ -182,7 +182,7 @@ export function DashboardApp(d: TradingDashboard) {
         <p className='mt-12 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground'>
           Workspace
         </p>
-        <nav className='mt-3 flex flex-col gap-1'>
+        <nav aria-label='Workspace' className='mt-3 flex flex-col gap-1'>
           <NavItem
             active={section === 'overview'}
             onClick={() => setSection('overview')}
@@ -272,7 +272,10 @@ export function DashboardApp(d: TradingDashboard) {
             </div>
           </div>
 
-          <div className='flex gap-1 overflow-x-auto border-t border-border px-4 py-2 md:hidden'>
+          <nav
+            aria-label='Workspace sections'
+            className='flex gap-1 overflow-x-auto border-t border-border px-4 py-2 md:hidden'
+          >
             {(
               [
                 ['overview', 'Overview'],
@@ -286,6 +289,7 @@ export function DashboardApp(d: TradingDashboard) {
               <button
                 key={id}
                 type='button'
+                aria-current={section === id ? 'page' : undefined}
                 onClick={() => setSection(id as MainSection)}
                 className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium ${
                   section === id
@@ -296,12 +300,42 @@ export function DashboardApp(d: TradingDashboard) {
                 {label}
               </button>
             ))}
-          </div>
+          </nav>
         </header>
 
         <main className='relative min-w-0 flex-1 space-y-6 px-4 py-5 md:px-8 md:py-7'>
           <div className='pointer-events-none absolute inset-0 bg-[linear-gradient(var(--foreground)_1px,transparent_1px),linear-gradient(90deg,var(--foreground)_1px,transparent_1px)] bg-size-[44px_44px] opacity-[0.035]' />
           <div className='relative'>
+            {section === 'overview' ? (
+              <SectionHeading
+                title='Overview'
+                description='Monitor instruments, automation, and open positions across your connected brokers.'
+              />
+            ) : null}
+            {section === 'token' ? (
+              <SectionHeading
+                title='Connections'
+                description='Manage broker credentials and account connections used by your strategies.'
+              />
+            ) : null}
+            {section === 'performance' ? (
+              <SectionHeading
+                title='Performance'
+                description='Review closed-trade results and compare activity across brokers and instruments.'
+              />
+            ) : null}
+            {section === 'activity' ? (
+              <SectionHeading
+                title='Activity'
+                description='Filter execution events by broker and event type, then inspect individual records.'
+              />
+            ) : null}
+            {section === 'admin' && isAdmin ? (
+              <SectionHeading
+                title='Administration'
+                description='Review system health and manage user access.'
+              />
+            ) : null}
             {globalError && <Alert tone='error'>{globalError}</Alert>}
             {globalSuccess && <Alert tone='success'>{globalSuccess}</Alert>}
 
@@ -1216,6 +1250,25 @@ export function DashboardApp(d: TradingDashboard) {
           </div>
         </main>
       </div>
+    </div>
+  );
+}
+
+function SectionHeading({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className='mb-5 border-b border-border/70 pb-4'>
+      <h2 className='text-lg font-semibold tracking-tight text-foreground'>
+        {title}
+      </h2>
+      <p className='mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground'>
+        {description}
+      </p>
     </div>
   );
 }
