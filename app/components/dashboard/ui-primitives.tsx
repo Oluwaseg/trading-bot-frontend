@@ -39,7 +39,7 @@ export function Panel({
 }) {
   return (
     <section
-      className={`rounded-xl border border-border bg-card/80 shadow-sm ${className}`}
+      className={`mt-4 rounded-xl border border-border bg-card/80 shadow-sm ${className}`}
     >
       <div className='flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4'>
         <h2 className='text-base font-semibold tracking-tight text-foreground'>

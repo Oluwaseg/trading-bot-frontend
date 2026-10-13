@@ -299,21 +299,30 @@ export function DashboardApp(d: TradingDashboard) {
           </div>
         </header>
 
-        <main className='relative flex-1 space-y-6 overflow-hidden px-4 py-5 md:px-8 md:py-7'>
-          <div className='pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(var(--foreground)_1px,transparent_1px),linear-gradient(90deg,var(--foreground)_1px,transparent_1px)] [background-size:44px_44px]' />
+        <main className='relative min-w-0 flex-1 space-y-6 px-4 py-5 md:px-8 md:py-7'>
+          <div className='pointer-events-none absolute inset-0 bg-[linear-gradient(var(--foreground)_1px,transparent_1px),linear-gradient(90deg,var(--foreground)_1px,transparent_1px)] bg-size-[44px_44px] opacity-[0.035]' />
           <div className='relative'>
             {globalError && <Alert tone='error'>{globalError}</Alert>}
             {globalSuccess && <Alert tone='success'>{globalSuccess}</Alert>}
 
             {section === 'overview' && (
               <>
-                <output className='rounded-md border border-border bg-muted/50 px-4 py-3 text-sm text-foreground'>
-                  Automated entries are enabled on{' '}
-                  {automatedEntriesEnabledCount}
-                  {' of '}
-                  {instrumentStates.length} instruments for this account.
+                <output className='flex w-full my-2 min-w-0 flex-col gap-2 rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-foreground sm:flex-row sm:items-center sm:justify-between'>
+                  <span className='min-w-0 leading-relaxed'>
+                    Automated entries are enabled on{' '}
+                    <strong className='font-semibold tabular-nums'>
+                      {automatedEntriesEnabledCount} of{' '}
+                      {instrumentStates.length}
+                    </strong>{' '}
+                    instruments for this account.
+                  </span>
+                  <span className='w-fit shrink-0 rounded-md border border-border bg-background/60 px-2 py-1 text-xs font-medium text-muted-foreground'>
+                    {instrumentStates.length === 0
+                      ? 'No instruments'
+                      : `${automatedEntriesEnabledCount} enabled`}
+                  </span>
                 </output>
-                <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
+                <div className='grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5'>
                   <Kpi
                     label={isAdmin ? 'Users' : 'Instruments'}
                     value={isAdmin ? userCount : instrumentStates.length}
