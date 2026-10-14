@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { InstrumentConfig, InstrumentState } from '../../api-client';
 import {
-  ASSET_CLASS_OPTIONS,
-  BROKER_OPTIONS,
+  MT5_ASSET_CLASS_OPTIONS,
   SYMBOL_OPTIONS_BY_BROKER_AND_CLASS,
   TIMEFRAME_OPTIONS_BY_BROKER,
 } from '../../lib/trading-constants';
@@ -85,60 +84,26 @@ export function InstrumentBoard({
     <div className='space-y-3'>
       {rows.map((instrument, index) => (
         <InstrumentRow
-          key={`${instrument.config.brokerType ?? 'deriv_ws'}:${instrument.symbol}`}
+          key={`mt5:${instrument.symbol}`}
           instrument={instrument}
           syncing={meta[index]?.isFetching ?? false}
           failed={meta[index]?.isError ?? false}
           errorMessage={meta[index]?.errorMessage ?? null}
           errorStatusCode={meta[index]?.errorStatusCode ?? null}
-          busy={busySymbols.includes(
-            `${instrument.config.brokerType ?? 'deriv_ws'}:${instrument.symbol}`
-          )}
-          onToggle={() =>
-            onToggle(
-              instrument.symbol,
-              instrument.config.brokerType ?? 'deriv_ws'
-            )
-          }
+          busy={busySymbols.includes(`mt5:${instrument.symbol}`)}
+          onToggle={() => onToggle(instrument.symbol, 'mt5')}
           onSetAutomatedEntries={(enabled) =>
-            onSetAutomatedEntries(
-              instrument.symbol,
-              instrument.config.brokerType ?? 'deriv_ws',
-              enabled
-            )
+            onSetAutomatedEntries(instrument.symbol, 'mt5', enabled)
           }
-          onClose={() =>
-            onClose(
-              instrument.symbol,
-              instrument.config.brokerType ?? 'deriv_ws'
-            )
-          }
+          onClose={() => onClose(instrument.symbol, 'mt5')}
           onUpdatePositionProtection={(payload) =>
-            onUpdatePositionProtection(
-              instrument.symbol,
-              instrument.config.brokerType ?? 'deriv_ws',
-              payload
-            )
+            onUpdatePositionProtection(instrument.symbol, 'mt5', payload)
           }
-          onRemove={() =>
-            onRemove(
-              instrument.symbol,
-              instrument.config.brokerType ?? 'deriv_ws'
-            )
-          }
+          onRemove={() => onRemove(instrument.symbol, 'mt5')}
           onSaveEdit={(updates) =>
-            onUpdateInstrument(
-              instrument.symbol,
-              instrument.config.brokerType ?? 'deriv_ws',
-              updates
-            )
+            onUpdateInstrument(instrument.symbol, 'mt5', updates)
           }
-          onEnableAsEma={() =>
-            onEnableAsEma(
-              instrument.symbol,
-              instrument.config.brokerType ?? 'deriv_ws'
-            )
-          }
+          onEnableAsEma={() => onEnableAsEma(instrument.symbol, 'mt5')}
         />
       ))}
     </div>
@@ -185,8 +150,8 @@ function InstrumentRow({
   const openEdit = () => {
     const c = instrument.config;
     setDraft({
-      brokerType: c.brokerType ?? 'deriv_ws',
-      assetClass: c.assetClass ?? 'Synthetic Indices',
+      brokerType: 'mt5',
+      assetClass: c.assetClass ?? 'Forex',
       symbol: c.symbol,
       mt5AccountId: c.mt5AccountId ?? null,
       shortEmaPeriod: c.shortEmaPeriod,
@@ -195,13 +160,8 @@ function InstrumentRow({
       historyDepth: c.historyDepth,
       positionSize: c.positionSize,
       strategy: c.strategy ?? 'fixed_isolated_stake',
-      recoverySizePerCurrency:
-        c.recoverySizePerCurrency ?? (c.brokerType === 'deriv_ws' ? 1 : 0),
-      maxRecoverySize:
-        c.maxRecoverySize ??
-        (c.brokerType === 'deriv_ws'
-          ? Math.max(35, c.positionSize)
-          : c.positionSize),
+      recoverySizePerCurrency: c.recoverySizePerCurrency ?? 0,
+      maxRecoverySize: c.maxRecoverySize ?? c.positionSize,
       multiplier: c.multiplier,
       trailingStopDistanceAmount: c.trailingStopDistanceAmount ?? 0,
     });
@@ -261,24 +221,17 @@ function InstrumentRow({
         : 'Standard Deficit';
 
   const strategyBadgeClass = 'bg-slate-500/15 text-slate-200';
-  const editBroker =
-    draft.brokerType ?? instrument.config.brokerType ?? 'deriv_ws';
+  const editBroker = 'mt5';
   const requestedEditAsset =
-    draft.assetClass ?? instrument.config.assetClass ?? 'Synthetic Indices';
-  const editAsset =
-    editBroker === 'mt5' && requestedEditAsset === 'Synthetic Indices'
-      ? 'Forex'
-      : requestedEditAsset;
+    draft.assetClass ?? instrument.config.assetClass ?? 'Forex';
+  const editAsset = MT5_ASSET_CLASS_OPTIONS.some(
+    (option) => option.value === requestedEditAsset
+  )
+    ? requestedEditAsset
+    : (MT5_ASSET_CLASS_OPTIONS[0]?.value ?? 'Forex');
   const editSymbols =
     SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[editBroker]?.[editAsset] ?? [];
-  const editAssetOptions =
-    editBroker === 'mt5'
-      ? ASSET_CLASS_OPTIONS.filter(
-          (option) => option.value !== 'Synthetic Indices'
-        )
-      : ASSET_CLASS_OPTIONS.filter(
-          (option) => option.value === 'Synthetic Indices'
-        );
+  const editAssetOptions = MT5_ASSET_CLASS_OPTIONS;
 
   return (
     <div
@@ -343,17 +296,6 @@ function InstrumentRow({
             <p className='mt-2 text-xs text-amber-200'>
               This automation is paused for signal-source review. Enabling it
               will activate its configured EMA signals.
-            </p>
-          ) : null}
-          {instrument.historyNotice ? (
-            <p
-              className={`mt-2 text-xs ${
-                instrument.historyNotice.tolerated
-                  ? 'text-muted-foreground'
-                  : 'text-amber-200'
-              }`}
-            >
-              {instrument.historyNotice.message}
             </p>
           ) : null}
           {!open && signal === 'NEUTRAL' && !marketClosed ? (
@@ -436,7 +378,6 @@ function InstrumentRow({
                 <div className='flex flex-wrap items-start gap-3'>
                   <PositionProtectionControls
                     key={open.contract_id}
-                    instrument={instrument}
                     position={open}
                     busy={busy || (instrument.positionSyncPending ?? false)}
                     onSave={onUpdatePositionProtection}
@@ -516,39 +457,8 @@ function InstrumentRow({
           </p>
           <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-4'>
             <SelectField
-              label='Broker'
-              help='Chooses which connected execution service places and manages this instrument’s trades.'
-              value={editBroker}
-              onChange={(value) => {
-                const nextBroker = value as NonNullable<
-                  InstrumentConfig['brokerType']
-                >;
-                const nextAsset =
-                  nextBroker === 'mt5' ? 'Forex' : 'Synthetic Indices';
-                const nextTimeFrame =
-                  TIMEFRAME_OPTIONS_BY_BROKER[nextBroker][0].value;
-                const nextSymbols =
-                  SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[nextBroker]?.[nextAsset] ??
-                  [];
-                setDraft((prev) => ({
-                  ...prev,
-                  brokerType: nextBroker,
-                  assetClass: nextAsset,
-                  symbol: nextSymbols[0] ?? prev.symbol,
-                  timeFrame: nextTimeFrame,
-                  positionSize: nextBroker === 'mt5' ? 0.01 : 10,
-                  recoverySizePerCurrency: nextBroker === 'deriv_ws' ? 1 : 0,
-                  maxRecoverySize: nextBroker === 'deriv_ws' ? 35 : 0.01,
-                }));
-              }}
-              options={BROKER_OPTIONS.map((broker) => ({
-                value: broker.value,
-                label: broker.label,
-              }))}
-            />
-            <SelectField
               label='Asset class'
-              help='Groups symbols by market type. The chosen broker determines which classes and symbols are available.'
+              help='Groups MT5 symbols by market type.'
               value={editAsset}
               onChange={(value) => {
                 const nextAsset = value as NonNullable<
@@ -623,12 +533,8 @@ function InstrumentRow({
               }
             />
             <NumberField
-              label={editBroker === 'mt5' ? 'Volume (lots)' : 'Stake'}
-              help={
-                editBroker === 'mt5'
-                  ? 'Starting MT5 trade volume in lots. Broker minimums and steps still apply.'
-                  : 'Starting Deriv stake amount in the account currency.'
-              }
+              label='Volume (lots)'
+              help='Starting MT5 trade volume in lots. Broker minimums and steps still apply.'
               value={draft.positionSize ?? 10}
               onChange={(value) =>
                 setDraft((prev) => ({ ...prev, positionSize: value }))
@@ -663,7 +569,7 @@ function InstrumentRow({
               <>
                 <NumberField
                   label='Native size per 1 account-currency loss'
-                  help='How many broker-native size units to add for each unit of realized account-currency loss. MT5 uses lots; Deriv uses stake.'
+                  help='How many lots to add for each unit of realized account-currency loss.'
                   value={draft.recoverySizePerCurrency ?? 0}
                   onChange={(value) =>
                     setDraft((prev) => ({
@@ -681,16 +587,6 @@ function InstrumentRow({
                   }
                 />
               </>
-            ) : null}
-            {editBroker === 'deriv_ws' ? (
-              <NumberField
-                label='Multiplier'
-                help='Deriv multiplier setting for multiplier contracts. This does not change MT5 lots.'
-                value={draft.multiplier ?? 100}
-                onChange={(value) =>
-                  setDraft((prev) => ({ ...prev, multiplier: value }))
-                }
-              />
             ) : null}
             <NumberField
               label='Automatic trail distance (caps at breakeven)'
@@ -761,12 +657,10 @@ function InstrumentRow({
 }
 
 function PositionProtectionControls({
-  instrument,
   position,
   busy,
   onSave,
 }: {
-  instrument: InstrumentState;
   position: NonNullable<InstrumentState['openPosition']>;
   busy: boolean;
   onSave: (payload: {
@@ -786,11 +680,8 @@ function PositionProtectionControls({
   const [saving, setSaving] = useState(false);
   const [dragging, setDragging] = useState<'stop' | 'target' | null>(null);
   const scaleRef = useRef<HTMLDivElement>(null);
-  const isDeriv = (instrument.config.brokerType ?? 'deriv_ws') === 'deriv_ws';
-  const entryLevel = isDeriv ? 0 : Number(position.buy_price);
-  const currentLevel = isDeriv
-    ? Number(position.profit ?? 0)
-    : Number(position.bid_price ?? position.buy_price);
+  const entryLevel = Number(position.buy_price);
+  const currentLevel = Number(position.bid_price ?? position.buy_price);
   const stopLevel = stopLoss;
   const targetLevel = takeProfit;
   const levels = [entryLevel, currentLevel, stopLevel, targetLevel].filter(
@@ -798,7 +689,7 @@ function PositionProtectionControls({
   );
   const rawMin = Math.min(...levels);
   const rawMax = Math.max(...levels);
-  const padding = Math.max((rawMax - rawMin) * 0.2, isDeriv ? 1 : 0.0001);
+  const padding = Math.max((rawMax - rawMin) * 0.2, 0.0001);
   const scaleMin = rawMin - padding;
   const scaleMax = rawMax + padding;
   const scaleSpan = scaleMax - scaleMin || 1;
@@ -813,9 +704,7 @@ function PositionProtectionControls({
       1,
       Math.max(0, (event.clientX - bounds.left) / bounds.width)
     );
-    const value = Number(
-      (scaleMin + ratio * scaleSpan).toFixed(isDeriv ? 2 : 5)
-    );
+    const value = Number((scaleMin + ratio * scaleSpan).toFixed(5));
     if (dragging === 'stop') setStopLoss(value);
     else setTakeProfit(value);
   };
@@ -848,27 +737,20 @@ function PositionProtectionControls({
     <div className='min-w-0 flex-1 rounded-md border border-border/70 bg-background/50 p-3'>
       <div className='mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs'>
         <span className='font-semibold text-foreground'>Position levels</span>
-        <span className='text-muted-foreground'>
-          {isDeriv ? 'Deriv account-currency amounts' : 'MT5 broker prices'}
-        </span>
+        <span className='text-muted-foreground'>MT5 broker prices</span>
       </div>
       <div className='mb-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground'>
-        <span>Entry {entryLevel.toFixed(isDeriv ? 2 : 5)}</span>
+        <span>Entry {entryLevel.toFixed(5)}</span>
         <span>
-          {isDeriv ? 'P/L' : 'Current'}{' '}
+          Current{' '}
           {position.profit != null
             ? `${position.profit >= 0 ? '+' : ''}${Number(position.profit).toFixed(2)}`
             : position.bid_price != null
               ? Number(position.bid_price).toFixed(5)
               : '—'}
         </span>
-        <span>
-          Stop {stopLoss == null ? 'off' : stopLoss.toFixed(isDeriv ? 2 : 5)}
-        </span>
-        <span>
-          Target{' '}
-          {takeProfit == null ? 'off' : takeProfit.toFixed(isDeriv ? 2 : 5)}
-        </span>
+        <span>Stop {stopLoss == null ? 'off' : stopLoss.toFixed(5)}</span>
+        <span>Target {takeProfit == null ? 'off' : takeProfit.toFixed(5)}</span>
       </div>
       <div
         ref={scaleRef}
@@ -877,11 +759,7 @@ function PositionProtectionControls({
         onPointerUp={() => setDragging(null)}
         onPointerCancel={() => setDragging(null)}
         role='img'
-        aria-label={
-          isDeriv
-            ? 'Position P/L and protection levels'
-            : 'Position price and protection levels'
-        }
+        aria-label='MT5 position price and protection levels'
       >
         <span
           className='absolute inset-y-0 w-px bg-cyan-300'
@@ -926,15 +804,13 @@ function PositionProtectionControls({
               checked={stopLoss !== null}
               onChange={(event) => setStopLoss(event.target.checked ? 0 : null)}
             />
-            {isDeriv ? 'Manual stop P/L level' : 'Hard stop price'}
+            Hard stop price
           </label>
           {stopLoss !== null ? (
             <NumberField
-              label={isDeriv ? 'P/L ($; positive locks profit)' : 'Price'}
+              label='Price'
               value={stopLoss}
-              onChange={(value) =>
-                setStopLoss(isDeriv ? value : Math.max(0, value))
-              }
+              onChange={(value) => setStopLoss(Math.max(0, value))}
             />
           ) : null}
         </div>
@@ -947,11 +823,11 @@ function PositionProtectionControls({
                 setTakeProfit(event.target.checked ? 0 : null)
               }
             />
-            {isDeriv ? 'Take profit' : 'Take-profit price'}
+            Take-profit price
           </label>
           {takeProfit !== null ? (
             <NumberField
-              label={isDeriv ? 'Profit amount ($)' : 'Price'}
+              label='Price'
               value={takeProfit}
               onChange={(value) => setTakeProfit(Math.max(0, value))}
             />
@@ -962,9 +838,8 @@ function PositionProtectionControls({
         </ButtonGhost>
       </div>
       <p className='mt-2 text-[10px] text-muted-foreground'>
-        {isDeriv
-          ? 'Deriv manual stops monitor live P/L; the configured broker-side loss limit remains as a backstop. Take profit is broker-side.'
-          : 'MT5 changes are sent as native broker price levels. Automatic trailing remains a separate server-managed rule.'}
+        MT5 changes are sent as native broker price levels. Automatic trailing
+        remains a separate server-managed rule.
       </p>
     </div>
   );

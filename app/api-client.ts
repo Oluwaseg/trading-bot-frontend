@@ -340,17 +340,6 @@ export interface InstrumentState {
   config: InstrumentConfig;
   signal: InstrumentSignal | null;
   positionSyncPending?: boolean;
-  historyNotice?: {
-    requested: number;
-    received: number;
-    tolerated: boolean;
-    message: string;
-  } | null;
-  historyWarning?: {
-    requested: number;
-    received: number;
-    message: string;
-  } | null;
   openPosition: {
     contract_id: string;
     signal: string;
@@ -437,7 +426,7 @@ export const tradingAPI = {
     ),
 
   getInstruments: () => apiClient.get<InstrumentConfig[]>('/instruments'),
-  getInstrumentState: (symbol: string, brokerType = 'deriv_ws') =>
+  getInstrumentState: (symbol: string, brokerType: BrokerType = 'mt5') =>
     apiClient.get<InstrumentState>(
       `/instruments/${symbol}/state?brokerType=${encodeURIComponent(brokerType)}`
     ),
@@ -450,7 +439,7 @@ export const tradingAPI = {
   updateInstrument: (
     symbol: string,
     updates: Partial<InstrumentConfig>,
-    brokerType = 'deriv_ws'
+    brokerType: BrokerType = 'mt5'
   ) =>
     apiClient.put<{
       success: boolean;
@@ -460,11 +449,11 @@ export const tradingAPI = {
       `/instruments/${symbol}?brokerType=${encodeURIComponent(brokerType)}`,
       updates
     ),
-  removeInstrument: (symbol: string, brokerType = 'deriv_ws') =>
+  removeInstrument: (symbol: string, brokerType: BrokerType = 'mt5') =>
     apiClient.delete<ApiMessageResponse>(
       `/instruments/${symbol}?brokerType=${encodeURIComponent(brokerType)}`
     ),
-  toggleInstrument: (symbol: string, brokerType = 'deriv_ws') =>
+  toggleInstrument: (symbol: string, brokerType: BrokerType = 'mt5') =>
     apiClient.patch<{ success: boolean; message: string; enabled: boolean }>(
       `/instruments/${symbol}/toggle?brokerType=${encodeURIComponent(brokerType)}`
     ),
@@ -480,7 +469,7 @@ export const tradingAPI = {
       `/instruments/${symbol}/automated-entries?brokerType=${encodeURIComponent(brokerType)}`,
       { automatedEntriesEnabled: enabled }
     ),
-  enableInstrumentAsEma: (symbol: string, brokerType = 'deriv_ws') =>
+  enableInstrumentAsEma: (symbol: string, brokerType: BrokerType = 'mt5') =>
     apiClient.patch<{
       success: boolean;
       message: string;
@@ -488,7 +477,7 @@ export const tradingAPI = {
     }>(
       `/instruments/${symbol}/enable-as-ema?brokerType=${encodeURIComponent(brokerType)}`
     ),
-  closeInstrumentPosition: (symbol: string, brokerType = 'deriv_ws') =>
+  closeInstrumentPosition: (symbol: string, brokerType: BrokerType = 'mt5') =>
     apiClient.post<{ success: boolean; contracts_closed: number }>(
       `/instruments/${symbol}/close?brokerType=${encodeURIComponent(brokerType)}`
     ),

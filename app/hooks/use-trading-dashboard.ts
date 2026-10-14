@@ -6,7 +6,6 @@ import {
 } from '@tanstack/react-query';
 import { useMemo, useRef, useState } from 'react';
 import type {
-  DerivAccountRow,
   Mt5Account,
   Mt5Connector,
   Mt5PairingCode,
@@ -17,7 +16,6 @@ import {
   tradingAPI,
   type InstrumentConfig,
   type InstrumentState,
-  type TokenStatus,
 } from '../api-client';
 import { extractErrorMessage } from '../lib/format';
 import { resolvePositionSnapshot } from '../lib/position-snapshot';
@@ -50,7 +48,6 @@ function useTradingDashboardInternal() {
     email: '',
     password: '',
   });
-  const [tokenInput, setTokenInput] = useState('');
   const [mt5AccountForm, setMt5AccountForm] = useState({
     label: '',
     login: '',
@@ -61,9 +58,6 @@ function useTradingDashboardInternal() {
     DEFAULT_NEW_INSTRUMENT
   );
   const [showAddInstrument, setShowAddInstrument] = useState(false);
-  const [derivAccounts, setDerivAccounts] = useState<DerivAccountRow[] | null>(
-    null
-  );
   const [createUserForm, setCreateUserForm] = useState<CreateUserForm>({
     email: '',
     password: '',
@@ -85,14 +79,6 @@ function useTradingDashboardInternal() {
   const healthQuery = useQuery({
     queryKey: ['dashboard', 'health'],
     queryFn: async () => (await tradingAPI.getHealth()).data,
-    enabled: !!currentUser,
-    refetchInterval: 5000,
-    ...poll,
-  });
-
-  const tokenQuery = useQuery({
-    queryKey: ['dashboard', 'token'],
-    queryFn: async () => (await tradingAPI.getTokenStatus()).data,
     enabled: !!currentUser,
     refetchInterval: 5000,
     ...poll,
@@ -205,24 +191,9 @@ function useTradingDashboardInternal() {
     onError: (error) => setGlobalError(extractErrorMessage(error)),
   });
 
-  const fetchDerivAccounts = async () => {
-    const data = (await tradingAPI.getDerivAccounts()).data;
-    const rows: DerivAccountRow[] = data?.data || [];
-    setDerivAccounts(rows);
-    return rows;
-  };
-
   const instrumentsQuery = useQuery({
     queryKey: ['dashboard', 'instruments'],
     queryFn: async () => (await tradingAPI.getInstruments()).data,
-    enabled: !!currentUser,
-    refetchInterval: 5000,
-    ...poll,
-  });
-
-  const logsQuery = useQuery({
-    queryKey: ['dashboard', 'logs'],
-    queryFn: async () => (await tradingAPI.getLogs(20)).data,
     enabled: !!currentUser,
     refetchInterval: 5000,
     ...poll,
@@ -250,9 +221,6 @@ function useTradingDashboardInternal() {
 
   const [activityPage, setActivityPage] = useState(1);
   const [activityPageSize, setActivityPageSize] = useState(25);
-  const [activityBroker, setActivityBroker] = useState<'deriv_ws' | 'mt5' | ''>(
-    ''
-  );
   const [activityType, setActivityType] = useState('');
   const activityQuery = useQuery({
     queryKey: [
@@ -260,7 +228,7 @@ function useTradingDashboardInternal() {
       'activity',
       activityPage,
       activityPageSize,
-      activityBroker,
+      'mt5',
       activityType,
     ],
     queryFn: async () =>
@@ -268,7 +236,7 @@ function useTradingDashboardInternal() {
         await tradingAPI.getActivity({
           page: activityPage,
           pageSize: activityPageSize,
-          broker: activityBroker,
+          broker: 'mt5',
           type: activityType,
         })
       ).data,
@@ -301,28 +269,31 @@ function useTradingDashboardInternal() {
     ...poll,
   });
 
+  const mt5InstrumentConfigs = (instrumentsQuery.data || []).filter(
+    (instrument) => instrument.brokerType === 'mt5'
+  );
   const instrumentStateQueries = useQueries({
-    queries: (instrumentsQuery.data || []).map((instrument) => ({
+    queries: mt5InstrumentConfigs.map((instrument) => ({
       queryKey: [
         'dashboard',
         'instrument-state',
-        instrument.brokerType ?? 'deriv_ws',
+        instrument.brokerType ?? 'mt5',
         instrument.symbol,
       ],
       queryFn: async () => {
         const queryKey = [
           'dashboard',
           'instrument-state',
-          instrument.brokerType ?? 'deriv_ws',
+          instrument.brokerType ?? 'mt5',
           instrument.symbol,
         ];
         const nextState = (
           await tradingAPI.getInstrumentState(
             instrument.symbol,
-            instrument.brokerType ?? 'deriv_ws'
+            instrument.brokerType ?? 'mt5'
           )
         ).data;
-        const stateKey = `${instrument.brokerType ?? 'deriv_ws'}:${instrument.symbol}`;
+        const stateKey = `mt5:${instrument.symbol}`;
         const previousState =
           queryClient.getQueryData<InstrumentState>(queryKey);
 
@@ -349,7 +320,7 @@ function useTradingDashboardInternal() {
     })),
   });
 
-  const instrumentStates: InstrumentState[] = (instrumentsQuery.data || []).map(
+  const instrumentStates: InstrumentState[] = mt5InstrumentConfigs.map(
     (cfg, index) => {
       const live = instrumentStateQueries[index]?.data;
       if (live) return live;
@@ -363,7 +334,7 @@ function useTradingDashboardInternal() {
     }
   );
 
-  const instrumentStateMeta = (instrumentsQuery.data || []).map((_, index) => ({
+  const instrumentStateMeta = mt5InstrumentConfigs.map((_, index) => ({
     isFetching: instrumentStateQueries[index]?.isFetching ?? false,
     isError: instrumentStateQueries[index]?.isError ?? false,
     errorMessage: instrumentStateQueries[index]?.error
@@ -412,64 +383,6 @@ function useTradingDashboardInternal() {
     onError: (error) => setGlobalError(extractErrorMessage(error)),
   });
 
-  const saveTokenMutation = useMutation({
-    mutationFn: async (payload: {
-      derivToken?: string;
-      preferredDerivAccountId?: string;
-    }) => (await tradingAPI.saveToken(payload)).data,
-    onSuccess: async (_data, variables) => {
-      setTokenInput('');
-      setGlobalError(null);
-      const preferredId = variables?.preferredDerivAccountId;
-      if (preferredId) {
-        setGlobalSuccess('Preferred Deriv account saved — waiting for daemon');
-        // Poll token status to see when runtime connects to preferred account
-        const maxAttempts = 8;
-        let attempt = 0;
-        const pollInterval = 2000;
-        const check = async () => {
-          attempt += 1;
-          try {
-            const status = (await tradingAPI.getTokenStatus())
-              .data as TokenStatus;
-            if (status?.runtimeConnected?.accountId === preferredId) {
-              setGlobalSuccess('Daemon connected to preferred Deriv account');
-              setTimeout(() => setGlobalSuccess(null), 3000);
-              return;
-            }
-          } catch (e) {
-            // ignore
-          }
-          if (attempt < maxAttempts) {
-            setTimeout(check, pollInterval);
-          } else {
-            setGlobalError('Daemon not yet connected to preferred account');
-            setTimeout(() => setGlobalError(null), 5000);
-            setGlobalSuccess(null);
-          }
-        };
-        void check();
-      } else {
-        const msg = 'Broker credentials saved successfully';
-        setGlobalSuccess(msg);
-        setTimeout(() => setGlobalSuccess(null), 3000);
-      }
-      await queryClient.invalidateQueries({ queryKey: ['dashboard', 'token'] });
-      await queryClient.refetchQueries({ queryKey: ['dashboard', 'token'] });
-    },
-    onError: (error) => setGlobalError(extractErrorMessage(error)),
-  });
-
-  const deleteTokenMutation = useMutation({
-    mutationFn: async () => (await tradingAPI.deleteToken()).data,
-    onSuccess: async () => {
-      setGlobalError(null);
-      await queryClient.invalidateQueries({ queryKey: ['dashboard', 'token'] });
-      await queryClient.refetchQueries({ queryKey: ['dashboard', 'token'] });
-    },
-    onError: (error) => setGlobalError(extractErrorMessage(error)),
-  });
-
   const addInstrumentMutation = useMutation({
     mutationFn: async (payload: InstrumentConfig) =>
       (await tradingAPI.addInstrument(payload)).data,
@@ -506,11 +419,7 @@ function useTradingDashboardInternal() {
       updates: Partial<InstrumentConfig>;
     }) => {
       return (
-        await tradingAPI.updateInstrument(
-          symbol,
-          updates,
-          brokerType ?? 'deriv_ws'
-        )
+        await tradingAPI.updateInstrument(symbol, updates, brokerType ?? 'mt5')
       ).data;
     },
     onSuccess: async (_data, { symbol }) => {
@@ -541,9 +450,8 @@ function useTradingDashboardInternal() {
       symbol: string;
       brokerType: InstrumentConfig['brokerType'];
     }) => {
-      return (
-        await tradingAPI.toggleInstrument(symbol, brokerType ?? 'deriv_ws')
-      ).data;
+      return (await tradingAPI.toggleInstrument(symbol, brokerType ?? 'mt5'))
+        .data;
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
@@ -610,7 +518,7 @@ function useTradingDashboardInternal() {
       symbol: string;
       brokerType: InstrumentConfig['brokerType'];
     }) =>
-      (await tradingAPI.enableInstrumentAsEma(symbol, brokerType ?? 'deriv_ws'))
+      (await tradingAPI.enableInstrumentAsEma(symbol, brokerType ?? 'mt5'))
         .data,
     onSuccess: async (_data, variables) => {
       setGlobalError(null);
@@ -638,10 +546,7 @@ function useTradingDashboardInternal() {
       brokerType: InstrumentConfig['brokerType'];
     }) => {
       return (
-        await tradingAPI.closeInstrumentPosition(
-          symbol,
-          brokerType ?? 'deriv_ws'
-        )
+        await tradingAPI.closeInstrumentPosition(symbol, brokerType ?? 'mt5')
       ).data;
     },
     onSuccess: async () => {
@@ -651,14 +556,12 @@ function useTradingDashboardInternal() {
       await queryClient.invalidateQueries({
         queryKey: ['dashboard', 'instrument-state'],
       });
-      await queryClient.invalidateQueries({ queryKey: ['dashboard', 'logs'] });
       await queryClient.refetchQueries({
         queryKey: ['dashboard', 'instruments'],
       });
       await queryClient.refetchQueries({
         queryKey: ['dashboard', 'instrument-state'],
       });
-      await queryClient.refetchQueries({ queryKey: ['dashboard', 'logs'] });
     },
     onError: (error) => setGlobalError(extractErrorMessage(error)),
   });
@@ -706,9 +609,8 @@ function useTradingDashboardInternal() {
       symbol: string;
       brokerType: InstrumentConfig['brokerType'];
     }) => {
-      return (
-        await tradingAPI.removeInstrument(symbol, brokerType ?? 'deriv_ws')
-      ).data;
+      return (await tradingAPI.removeInstrument(symbol, brokerType ?? 'mt5'))
+        .data;
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
@@ -807,10 +709,8 @@ function useTradingDashboardInternal() {
 
   const userCount = healthQuery.data?.trading.users ?? 0;
   const health = healthQuery.data;
-  const logs = logsQuery.data || [];
   const analytics = analyticsQueryWithPage.data || analyticsQuery.data;
   const logSummary = logSummaryQuery.data;
-  const tokenStatus = tokenQuery.data;
   const adminUsers = usersQuery.data || [];
 
   const anyInstrumentFetching = instrumentStateMeta.some((m) => m.isFetching);
@@ -820,9 +720,7 @@ function useTradingDashboardInternal() {
     currentUser,
     isAdmin,
     healthQuery,
-    tokenQuery,
     instrumentsQuery,
-    logsQuery,
     logSummaryQuery,
     analyticsQuery,
     usersQuery,
@@ -835,8 +733,6 @@ function useTradingDashboardInternal() {
     globalSuccess,
     loginForm,
     setLoginForm,
-    tokenInput,
-    setTokenInput,
     mt5AccountForm,
     setMt5AccountForm,
     mt5Accounts: (mt5AccountsQuery.data || []) as Mt5Account[],
@@ -870,8 +766,6 @@ function useTradingDashboardInternal() {
     setCreateUserForm,
     loginMutation,
     logoutMutation,
-    saveTokenMutation,
-    deleteTokenMutation,
     addInstrumentMutation,
     updateInstrumentMutation,
     toggleInstrumentMutation,
@@ -887,7 +781,6 @@ function useTradingDashboardInternal() {
     openPositionCount,
     userCount,
     health,
-    logs,
     activity: activityQuery.data,
     activityLoading: activityQuery.isFetching,
     activityError: activityQuery.isError,
@@ -895,8 +788,6 @@ function useTradingDashboardInternal() {
     setActivityPage,
     activityPageSize,
     setActivityPageSize,
-    activityBroker,
-    setActivityBroker,
     activityType,
     setActivityType,
     analytics,
@@ -905,12 +796,9 @@ function useTradingDashboardInternal() {
     tradesPageSize,
     setTradesPageSize,
     logSummary,
-    tokenStatus,
     adminUsers,
     instrumentPollMs,
     setInstrumentPollMs,
-    derivAccounts,
-    fetchDerivAccounts,
   };
 }
 

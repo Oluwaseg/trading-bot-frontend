@@ -4,7 +4,6 @@ import { useState } from 'react';
 import type {
   AdminUser,
   AnalyticsSummary,
-  DerivAccountRow,
   InstrumentConfig,
   LogEntry,
   LogSummary,
@@ -12,8 +11,7 @@ import type {
 import type { TradingDashboard } from '../../hooks/use-trading-dashboard';
 import { formatDate, formatMoney } from '../../lib/format';
 import {
-  ASSET_CLASS_OPTIONS,
-  BROKER_OPTIONS,
+  MT5_ASSET_CLASS_OPTIONS,
   SYMBOL_OPTIONS_BY_BROKER_AND_CLASS,
   TIMEFRAME_OPTIONS_BY_BROKER,
 } from '../../lib/trading-constants';
@@ -36,15 +34,12 @@ import {
 type MainSection =
   | 'overview'
   | 'mt5-accounts'
-  | 'token'
   | 'performance'
   | 'activity'
   | 'admin';
 
 export function DashboardApp(d: TradingDashboard) {
   const [section, setSection] = useState<MainSection>('overview');
-  const [showDerivAccountsModal, setShowDerivAccountsModal] = useState(false);
-  const [isCheckingAccounts, setIsCheckingAccounts] = useState(false);
   const [pendingInstrumentActions, setPendingInstrumentActions] = useState<
     Record<string, boolean>
   >({});
@@ -56,16 +51,11 @@ export function DashboardApp(d: TradingDashboard) {
     globalError,
     globalSuccess,
     health,
-    tokenStatus,
-    tokenInput,
-    setTokenInput,
     mt5AccountForm,
     setMt5AccountForm,
     mt5Accounts,
     createMt5AccountMutation,
     deleteMt5AccountMutation,
-    saveTokenMutation,
-    deleteTokenMutation,
     instrumentStates,
     instrumentStateMeta,
     anyInstrumentFetching,
@@ -83,7 +73,6 @@ export function DashboardApp(d: TradingDashboard) {
     removeInstrumentMutation,
     analytics,
     logSummary,
-    logs,
     activity,
     activityLoading,
     activityError,
@@ -91,11 +80,8 @@ export function DashboardApp(d: TradingDashboard) {
     setActivityPage,
     activityPageSize,
     setActivityPageSize,
-    activityBroker,
-    setActivityBroker,
     activityType,
     setActivityType,
-    activeInstrumentCount,
     userCount,
     createUserForm,
     setCreateUserForm,
@@ -103,8 +89,6 @@ export function DashboardApp(d: TradingDashboard) {
     resetPasswordMutation,
     deleteUserMutation,
     adminUsers,
-    derivAccounts,
-    fetchDerivAccounts,
   } = d;
 
   const runInstrumentAction = async (
@@ -128,42 +112,56 @@ export function DashboardApp(d: TradingDashboard) {
     }
   };
 
-  const derivOpenPositionCount = instrumentStates.filter(
-    (instrument) =>
-      (instrument.config.brokerType ?? 'deriv_ws') === 'deriv_ws' &&
-      !!instrument.openPosition
+  const mt5InstrumentEntries = instrumentStates.flatMap((instrument, index) =>
+    instrument.config.brokerType === 'mt5'
+      ? [{ instrument, meta: instrumentStateMeta[index] }]
+      : []
+  );
+  const mt5InstrumentStates = mt5InstrumentEntries.map(
+    ({ instrument }) => instrument
+  );
+  const mt5InstrumentMeta = mt5InstrumentEntries.map(({ meta }) => meta);
+  const mt5ActiveInstrumentCount = mt5InstrumentStates.filter(
+    (instrument) => instrument.config.enabled
   ).length;
-  const automatedEntriesEnabledCount = instrumentStates.filter(
+  const mt5OpenPositionCount = mt5InstrumentStates.filter(
+    (instrument) => !!instrument.openPosition
+  ).length;
+  const automatedEntriesEnabledCount = mt5InstrumentStates.filter(
     (instrument) => instrument.config.automatedEntriesEnabled === true
   ).length;
-  const preferredDerivAccountId = tokenStatus?.preferredDerivAccountId ?? null;
-  const connectedDerivAccountId =
-    tokenStatus?.runtimeConnected?.accountId ?? null;
-  const derivAccountStatusText = !preferredDerivAccountId
-    ? 'No Deriv account selected'
-    : connectedDerivAccountId === preferredDerivAccountId
-      ? 'Using selected account'
-      : 'Selected account pending reconnect';
 
-  const newInstrumentBroker = newInstrument.brokerType ?? 'deriv_ws';
-  const isMt5Broker = newInstrumentBroker === 'mt5';
-  const requestedNewAssetClass = newInstrument.assetClass;
-  const newInstrumentAssetClass =
-    isMt5Broker && requestedNewAssetClass === 'Synthetic Indices'
-      ? 'Forex'
-      : (requestedNewAssetClass ??
-        (isMt5Broker ? 'Forex' : 'Synthetic Indices'));
+  const newInstrumentBroker = 'mt5';
+  const newInstrumentAssetClass = MT5_ASSET_CLASS_OPTIONS.some(
+    (option) => option.value === newInstrument.assetClass
+  )
+    ? newInstrument.assetClass!
+    : (MT5_ASSET_CLASS_OPTIONS[0]?.value ?? 'Forex');
   const newInstrumentSymbols =
     SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[newInstrumentBroker]?.[
       newInstrumentAssetClass
     ] ?? [];
-  const newInstrumentAssetOptions = isMt5Broker
-    ? ASSET_CLASS_OPTIONS.filter(
-        (option) => option.value !== 'Synthetic Indices'
-      )
-    : ASSET_CLASS_OPTIONS.filter(
-        (option) => option.value === 'Synthetic Indices'
-      );
+  const newInstrumentAssetOptions = MT5_ASSET_CLASS_OPTIONS;
+  const mt5BrokerAnalytics = analytics?.byBroker.find(
+    (row) => row.brokerType === 'mt5'
+  );
+  const mt5Analytics = analytics
+    ? {
+        ...analytics,
+        closedTrades: mt5BrokerAnalytics?.closedTrades ?? 0,
+        wins: mt5BrokerAnalytics?.wins ?? 0,
+        losses: mt5BrokerAnalytics?.losses ?? 0,
+        breakeven: mt5BrokerAnalytics?.breakeven ?? 0,
+        netProfit: mt5BrokerAnalytics?.netProfit ?? 0,
+        grossProfit: mt5BrokerAnalytics?.grossProfit ?? 0,
+        grossLoss: mt5BrokerAnalytics?.grossLoss ?? 0,
+        winRate: mt5BrokerAnalytics?.winRate ?? 0,
+        profitFactor: mt5BrokerAnalytics?.profitFactor ?? null,
+        byBroker: mt5BrokerAnalytics ? [mt5BrokerAnalytics] : [],
+        bySymbol: analytics.bySymbol.filter((row) => row.brokerType === 'mt5'),
+        latest: analytics.latest.filter((row) => row.brokerType === 'mt5'),
+      }
+    : undefined;
 
   return (
     <div className='flex min-h-screen bg-background text-foreground'>
@@ -194,12 +192,6 @@ export function DashboardApp(d: TradingDashboard) {
             onClick={() => setSection('mt5-accounts')}
           >
             MT5 Accounts
-          </NavItem>
-          <NavItem
-            active={section === 'token'}
-            onClick={() => setSection('token')}
-          >
-            Connection / Token
           </NavItem>
           <NavItem
             active={section === 'performance'}
@@ -280,7 +272,6 @@ export function DashboardApp(d: TradingDashboard) {
               [
                 ['overview', 'Overview'],
                 ['mt5-accounts', 'MT5 Accounts'],
-                ['token', 'Connection / Token'],
                 ['performance', 'Stats'],
                 ['activity', 'Logs'],
                 ...(isAdmin ? [['admin', 'Admin']] : []),
@@ -309,19 +300,13 @@ export function DashboardApp(d: TradingDashboard) {
             {section === 'overview' ? (
               <SectionHeading
                 title='Overview'
-                description='Monitor instruments, automation, and open positions across your connected brokers.'
-              />
-            ) : null}
-            {section === 'token' ? (
-              <SectionHeading
-                title='Connections'
-                description='Manage broker credentials and account connections used by your strategies.'
+                description='Monitor MT5 instruments, automated entries, and open positions.'
               />
             ) : null}
             {section === 'performance' ? (
               <SectionHeading
                 title='Performance'
-                description='Review closed-trade results and compare activity across brokers and instruments.'
+                description='Review closed-trade results across MT5 accounts and instruments.'
               />
             ) : null}
             {section === 'activity' ? (
@@ -346,12 +331,12 @@ export function DashboardApp(d: TradingDashboard) {
                     Automated entries are enabled on{' '}
                     <strong className='font-semibold tabular-nums'>
                       {automatedEntriesEnabledCount} of{' '}
-                      {instrumentStates.length}
+                      {mt5InstrumentStates.length}
                     </strong>{' '}
                     instruments for this account.
                   </span>
                   <span className='w-fit shrink-0 rounded-md border border-border bg-background/60 px-2 py-1 text-xs font-medium text-muted-foreground'>
-                    {instrumentStates.length === 0
+                    {mt5InstrumentStates.length === 0
                       ? 'No instruments'
                       : `${automatedEntriesEnabledCount} enabled`}
                   </span>
@@ -359,28 +344,30 @@ export function DashboardApp(d: TradingDashboard) {
                 <div className='grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5'>
                   <Kpi
                     label={isAdmin ? 'Users' : 'Instruments'}
-                    value={isAdmin ? userCount : instrumentStates.length}
-                    hint={isAdmin ? 'In this deployment' : 'Configured symbols'}
+                    value={isAdmin ? userCount : mt5InstrumentStates.length}
+                    hint={isAdmin ? 'In this deployment' : 'MT5 instruments'}
                   />
                   <Kpi
                     label='Monitoring'
-                    value={activeInstrumentCount}
-                    hint='Instruments not paused'
+                    value={mt5ActiveInstrumentCount}
+                    hint='MT5 instruments not paused'
                   />
                   <Kpi
                     label='Automated entries'
-                    value={`${automatedEntriesEnabledCount}/${instrumentStates.length}`}
+                    value={`${automatedEntriesEnabledCount}/${mt5InstrumentStates.length}`}
                     hint='Per instrument'
                   />
                   <Kpi
-                    label='Deriv open positions'
-                    value={derivOpenPositionCount}
-                    hint='Deriv portfolio'
+                    label='MT5 open positions'
+                    value={mt5OpenPositionCount}
+                    hint='Across configured MT5 accounts'
                   />
                   <Kpi
-                    label='Net P/L (all brokers)'
-                    value={analytics ? formatMoney(analytics.netProfit) : '—'}
-                    hint='Closed trades'
+                    label='MT5 net P/L'
+                    value={
+                      mt5Analytics ? formatMoney(mt5Analytics.netProfit) : '—'
+                    }
+                    hint='Closed MT5 trades'
                   />
                 </div>
 
@@ -400,89 +387,35 @@ export function DashboardApp(d: TradingDashboard) {
                   {showAddInstrument && (
                     <div className='mb-6 grid gap-3 rounded-xl border border-border bg-background/50 p-4 md:grid-cols-2 xl:grid-cols-4'>
                       <SelectField
-                        label='Broker'
-                        value={newInstrumentBroker}
-                        onChange={(value) => {
-                          const nextBroker = value as 'deriv_ws' | 'mt5';
-                          const fallbackAsset = 'Synthetic Indices';
-                          const nextAsset =
-                            nextBroker === 'mt5' ? 'Forex' : fallbackAsset;
-                          const nextTimeFrame =
-                            TIMEFRAME_OPTIONS_BY_BROKER[nextBroker][0].value;
-                          const brokerSymbols =
-                            SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[nextBroker] ??
-                            {};
-                          const symbols =
-                            brokerSymbols[nextAsset] ??
-                            SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws[
-                              'Synthetic Indices'
-                            ] ??
-                            [];
-
+                        label='Execution account'
+                        value={newInstrument.mt5AccountId ?? ''}
+                        onChange={(value) =>
                           setNewInstrument((prev) => ({
                             ...prev,
-                            brokerType: nextBroker,
-                            assetClass: nextAsset,
-                            symbol: symbols[0] ?? prev.symbol,
-                            timeFrame: nextTimeFrame,
-                            recoverySizePerCurrency:
-                              nextBroker === 'deriv_ws' ? 1 : 0,
-                            maxRecoverySize:
-                              nextBroker === 'deriv_ws'
-                                ? Math.max(35, prev.positionSize)
-                                : 0.01,
-                            positionSize: nextBroker === 'mt5' ? 0.01 : 10,
-                            mt5AccountId:
-                              nextBroker === 'mt5'
-                                ? (mt5Accounts[0]?.id ?? null)
-                                : null,
-                          }));
-                        }}
-                        options={BROKER_OPTIONS.map((b) => ({
-                          value: b.value,
-                          label: b.label,
+                            brokerType: 'mt5',
+                            mt5AccountId: value || null,
+                          }))
+                        }
+                        options={mt5Accounts.map((account) => ({
+                          value: account.id,
+                          label: `${account.label} · ${account.server}`,
                         }))}
                       />
-                      {isMt5Broker ? (
-                        <SelectField
-                          label='Execution account'
-                          value={newInstrument.mt5AccountId ?? ''}
-                          onChange={(value) =>
-                            setNewInstrument((prev) => ({
-                              ...prev,
-                              mt5AccountId: value || null,
-                            }))
-                          }
-                          options={mt5Accounts.map((account) => ({
-                            value: account.id,
-                            label: `${account.label} · ${account.server}`,
-                          }))}
-                        />
-                      ) : null}
                       <SelectField
                         label='Asset class'
                         value={newInstrumentAssetClass}
                         onChange={(value) => {
-                          const nextAsset = value as
-                            | 'Synthetic Indices'
-                            | 'Forex'
-                            | 'Stocks'
-                            | 'Commodities'
-                            | 'Indices'
-                            | 'Crypto';
-                          const brokerSymbols =
-                            SYMBOL_OPTIONS_BY_BROKER_AND_CLASS[
-                              newInstrumentBroker
-                            ] ?? {};
+                          const nextAsset = value as NonNullable<
+                            InstrumentConfig['assetClass']
+                          >;
                           const symbols =
-                            brokerSymbols[nextAsset] ??
-                            SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.deriv_ws[
-                              'Synthetic Indices'
-                            ] ??
-                            [];
+                            SYMBOL_OPTIONS_BY_BROKER_AND_CLASS.mt5?.[
+                              nextAsset
+                            ] ?? [];
 
                           setNewInstrument((prev) => ({
                             ...prev,
+                            brokerType: 'mt5',
                             assetClass: nextAsset,
                             symbol: symbols[0] ?? prev.symbol,
                           }));
@@ -551,11 +484,7 @@ export function DashboardApp(d: TradingDashboard) {
                         }
                       />
                       <NumberField
-                        label={
-                          newInstrumentBroker === 'mt5'
-                            ? 'Volume (lots)'
-                            : 'Stake'
-                        }
+                        label='Volume (lots)'
                         value={newInstrument.positionSize}
                         onChange={(value) =>
                           setNewInstrument((prev) => ({
@@ -617,18 +546,6 @@ export function DashboardApp(d: TradingDashboard) {
                           />
                         </>
                       ) : null}
-                      {newInstrumentBroker === 'deriv_ws' ? (
-                        <NumberField
-                          label='Multiplier'
-                          value={newInstrument.multiplier}
-                          onChange={(value) =>
-                            setNewInstrument((prev) => ({
-                              ...prev,
-                              multiplier: value,
-                            }))
-                          }
-                        />
-                      ) : null}
                       <NumberField
                         label='Automatic trail distance (caps at breakeven)'
                         help='Server-managed trailing exit. It starts at minus this distance, rises with peak P/L, and stops at breakeven; use the per-position manual stop to lock in profit.'
@@ -645,10 +562,13 @@ export function DashboardApp(d: TradingDashboard) {
                           className='w-full'
                           disabled={
                             addInstrumentMutation.isPending ||
-                            (isMt5Broker && !newInstrument.mt5AccountId)
+                            !newInstrument.mt5AccountId
                           }
                           onClick={() => {
-                            const payload = { ...newInstrument };
+                            const payload = {
+                              ...newInstrument,
+                              brokerType: 'mt5' as const,
+                            };
                             if (payload.strategy === 'fixed_isolated_stake') {
                               delete payload.recoverySizePerCurrency;
                               delete payload.maxRecoverySize;
@@ -669,8 +589,8 @@ export function DashboardApp(d: TradingDashboard) {
                   )}
 
                   <InstrumentBoard
-                    rows={instrumentStates}
-                    meta={instrumentStateMeta}
+                    rows={mt5InstrumentStates}
+                    meta={mt5InstrumentMeta}
                     busySymbols={Object.keys(pendingInstrumentActions)}
                     onToggle={(symbol, brokerType) =>
                       runInstrumentAction(symbol, brokerType, () =>
@@ -798,274 +718,26 @@ export function DashboardApp(d: TradingDashboard) {
               />
             )}
 
-            {section === 'token' && (
-              <Panel
-                title='Broker credentials'
-                actions={
-                  tokenStatus?.configured || mt5Accounts.length > 0 ? (
-                    <span className='text-xs text-muted-foreground'>
-                      Updated {formatDate(tokenStatus?.updatedAt)}
-                    </span>
-                  ) : null
-                }
-              >
-                <div className='mb-5 grid gap-3 sm:grid-cols-1'>
-                  <div className='rounded-xl border border-border bg-background/40 p-3'>
-                    <p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground'>
-                      Deriv
-                    </p>
-                    <p className='mt-2 text-sm font-medium text-foreground'>
-                      {tokenStatus?.configured
-                        ? 'Deriv live ready'
-                        : 'Deriv not ready'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className='grid gap-6 lg:grid-cols-1'>
-                  <div className='rounded-xl border border-border bg-background/40 p-4'>
-                    <h3 className='mb-3 text-sm font-semibold text-foreground'>
-                      Deriv
-                    </h3>
-                    <div className='mb-3 flex items-center gap-2'>
-                      <span
-                        className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
-                          tokenStatus?.derivConnected
-                            ? 'bg-emerald-500/15 text-emerald-300'
-                            : 'bg-muted text-muted-foreground'
-                        }`}
-                      >
-                        {tokenStatus?.derivConnected
-                          ? 'Connected'
-                          : 'Not configured'}
-                      </span>
-                    </div>
-                    <p className='text-sm text-muted-foreground'>
-                      Paste a token with trading permissions. It is encrypted
-                      and stored per account.
-                    </p>
-                    <div className='mt-4 space-y-3'>
-                      <input
-                        type='password'
-                        value={tokenInput}
-                        onChange={(e) => setTokenInput(e.target.value)}
-                        placeholder='Deriv API token'
-                        className='w-full rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring'
-                      />
-                      {tokenStatus?.configured && (
-                        <p className='text-xs text-muted-foreground'>
-                          Stored token: ••••{tokenStatus.tokenLast4}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className='flex items-center justify-between gap-3 rounded-xl border border-border bg-background/40 p-4'>
-                    <div>
-                      <h3 className='text-sm font-semibold text-foreground'>
-                        MT5 accounts
-                      </h3>
-                      <p className='mt-1 text-sm text-muted-foreground'>
-                        {mt5Accounts.length} configured account
-                        {mt5Accounts.length === 1 ? '' : 's'}
-                      </p>
-                    </div>
-                    <ButtonGhost onClick={() => setSection('mt5-accounts')}>
-                      Manage accounts
-                    </ButtonGhost>
-                  </div>
-                </div>
-
-                <div className='mt-5 flex flex-wrap gap-2'>
-                  <ButtonPrimary
-                    disabled={
-                      (!tokenInput && mt5Accounts.length === 0) ||
-                      saveTokenMutation.isPending
-                    }
-                    onClick={() =>
-                      saveTokenMutation.mutate({
-                        derivToken: tokenInput.trim() || undefined,
-                      })
-                    }
-                  >
-                    {saveTokenMutation.isPending
-                      ? 'Saving…'
-                      : 'Save credentials'}
-                  </ButtonPrimary>
-                  <ButtonGhost
-                    disabled={
-                      !tokenStatus?.configured || deleteTokenMutation.isPending
-                    }
-                    onClick={() => deleteTokenMutation.mutate()}
-                  >
-                    Remove all
-                  </ButtonGhost>
-                </div>
-                <div className='mt-4'>
-                  <button
-                    type='button'
-                    disabled={isCheckingAccounts}
-                    onClick={async () => {
-                      try {
-                        setIsCheckingAccounts(true);
-                        await fetchDerivAccounts();
-                        setShowDerivAccountsModal(true);
-                      } catch (e) {
-                        // ignore
-                      } finally {
-                        setIsCheckingAccounts(false);
-                      }
-                    }}
-                    className='flex items-center gap-2 rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60'
-                  >
-                    {isCheckingAccounts ? (
-                      <>
-                        <span className='inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent' />
-                        Checking…
-                      </>
-                    ) : (
-                      'Check accounts'
-                    )}
-                  </button>
-                </div>
-              </Panel>
-            )}
-
-            {/* Accounts modal (simple) */}
-            {/* keep modal next to overview for visibility */}
-            {section === 'token' && showDerivAccountsModal && (
-              <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50'>
-                <div className='w-full max-w-2xl rounded-lg bg-card p-6'>
-                  <div className='flex items-center justify-between'>
-                    <h3 className='text-lg font-semibold'>Deriv accounts</h3>
-                    <button
-                      onClick={() => {
-                        setShowDerivAccountsModal(false);
-                      }}
-                      className='text-sm text-muted-foreground'
-                    >
-                      Close
-                    </button>
-                  </div>
-                  <div className='mt-4 space-y-3'>
-                    {isCheckingAccounts ? (
-                      <div className='flex items-center justify-center gap-3 py-8 text-sm text-muted-foreground'>
-                        <span className='inline-block h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent' />
-                        Loading Deriv accounts…
-                      </div>
-                    ) : (derivAccounts || []).length === 0 ? (
-                      <p className='text-sm text-muted-foreground'>
-                        No accounts found.
-                      </p>
-                    ) : (
-                      (derivAccounts ?? []).map((a: DerivAccountRow) => {
-                        const isCurrent =
-                          a.account_id === tokenStatus?.preferredDerivAccountId;
-                        const isConnected =
-                          a.account_id ===
-                          tokenStatus?.runtimeConnected?.accountId;
-                        return (
-                          <div
-                            key={a.account_id}
-                            className={`flex items-center justify-between rounded-lg p-3 border ${
-                              isCurrent
-                                ? 'border-emerald-400 bg-emerald-600/5'
-                                : 'border-border'
-                            }`}
-                          >
-                            <div>
-                              <p className='font-medium flex items-center gap-3'>
-                                <span>{a.account_id}</span>
-                                <span className='text-xs px-2 py-0.5 rounded-md bg-muted text-muted-foreground'>
-                                  {a.account_type}
-                                </span>
-                                {isCurrent && (
-                                  <span className='ml-2 inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-400'>
-                                    <svg
-                                      width='12'
-                                      height='12'
-                                      viewBox='0 0 24 24'
-                                      fill='none'
-                                      xmlns='http://www.w3.org/2000/svg'
-                                    >
-                                      <path
-                                        d='M20 6L9 17l-5-5'
-                                        stroke='currentColor'
-                                        strokeWidth='2'
-                                        strokeLinecap='round'
-                                        strokeLinejoin='round'
-                                      />
-                                    </svg>
-                                    Preferred
-                                  </span>
-                                )}
-                                {isConnected && (
-                                  <span className='ml-2 inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-xs text-amber-400'>
-                                    <svg
-                                      width='12'
-                                      height='12'
-                                      viewBox='0 0 24 24'
-                                      fill='none'
-                                      xmlns='http://www.w3.org/2000/svg'
-                                    >
-                                      <circle
-                                        cx='12'
-                                        cy='12'
-                                        r='6'
-                                        stroke='currentColor'
-                                        strokeWidth='2'
-                                      />
-                                    </svg>
-                                    Connected
-                                  </span>
-                                )}
-                              </p>
-                              <p className='text-xs text-muted-foreground mt-1'>
-                                Balance: {a.balance} {a.currency}
-                              </p>
-                            </div>
-                            <div className='flex gap-2'>
-                              <button
-                                onClick={() => {
-                                  if (!isCurrent) {
-                                    saveTokenMutation.mutate({
-                                      preferredDerivAccountId: a.account_id,
-                                    });
-                                  }
-                                  setShowDerivAccountsModal(false);
-                                }}
-                                className={`rounded-md px-3 py-1 text-sm ${isCurrent ? 'bg-muted text-muted-foreground' : 'bg-emerald-500/10 text-emerald-200'}`}
-                              >
-                                {isCurrent ? 'Selected' : 'Select'}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
             {section === 'performance' && (
               <>
                 <Panel title='Analytics snapshot'>
                   <AnalyticsPanel
-                    analytics={analytics}
+                    analytics={mt5Analytics}
                     logSummary={logSummary}
                   />
                 </Panel>
                 <Panel title='Per-instrument stats'>
-                  <BrokerPerInstrumentTables rows={analytics?.bySymbol || []} />
+                  <BrokerPerInstrumentTables
+                    rows={mt5Analytics?.bySymbol || []}
+                  />
                 </Panel>
                 <Panel title='Latest closed trades'>
                   <BrokerLatestTradesTables
-                    rows={analytics?.latest || []}
+                    rows={mt5Analytics?.latest || []}
                     page={d.tradesPage}
                     pageSize={d.tradesPageSize}
                     setPage={d.setTradesPage}
-                    total={analytics?.closedTrades ?? null}
+                    total={mt5Analytics?.closedTrades ?? null}
                   />
                 </Panel>
               </>
@@ -1079,17 +751,12 @@ export function DashboardApp(d: TradingDashboard) {
                   pageSize={activityPageSize}
                   total={activity?.total ?? 0}
                   totalPages={activity?.totalPages ?? 0}
-                  broker={activityBroker}
                   type={activityType}
                   loading={activityLoading}
                   failed={activityError}
                   onPageChange={setActivityPage}
                   onPageSizeChange={(value) => {
                     setActivityPageSize(value);
-                    setActivityPage(1);
-                  }}
-                  onBrokerChange={(value) => {
-                    setActivityBroker(value as '' | 'deriv_ws' | 'mt5');
                     setActivityPage(1);
                   }}
                   onTypeChange={(value) => {
@@ -1273,10 +940,8 @@ function SectionHeading({
   );
 }
 
-function formatBrokerLabel(brokerType?: string | null) {
-  if (brokerType === 'mt5') return 'MT5';
-  if (brokerType === 'deriv_ws') return 'Deriv';
-  return 'Deriv';
+function formatBrokerLabel(_brokerType?: string | null) {
+  return 'MT5';
 }
 
 function AnalyticsPanel({
@@ -1287,88 +952,50 @@ function AnalyticsPanel({
   logSummary?: LogSummary;
 }) {
   const ls = logSummary;
-  const derivLog = ls?.byBroker?.deriv_ws;
   const mt5Log = ls?.byBroker?.mt5;
-  const brokerSummaryEntries = (['deriv_ws', 'mt5'] as const).map(
-    (brokerType) => {
-      const broker = analytics?.byBroker?.find(
-        (row) => row.brokerType === brokerType
-      );
-      return {
-        brokerType,
-        label: formatBrokerLabel(brokerType),
-        closedTrades: broker?.closedTrades ?? 0,
-        netProfit: broker?.netProfit ?? 0,
-        winRate: broker?.winRate ?? 0,
-      };
-    }
-  );
 
   return (
-    <div className='space-y-4'>
-      <div className='grid gap-2 sm:grid-cols-2 xl:grid-cols-3'>
-        {brokerSummaryEntries.map(
-          ({ brokerType, label, closedTrades, netProfit, winRate }) => (
-            <div
-              key={brokerType}
-              className='rounded-xl border border-border bg-background/40 p-3'
-            >
-              <p className='text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground'>
-                {label}
-              </p>
-              <div className='mt-2 grid grid-cols-2 gap-2'>
-                <MiniStat label='Closed' value={String(closedTrades)} />
-                <MiniStat label='Net P/L' value={formatMoney(netProfit)} />
-                <MiniStat
-                  label='Win rate'
-                  value={`${(winRate * 100).toFixed(1)}%`}
-                />
-                <MiniStat
-                  label='Open'
-                  value={String(
-                    brokerType === 'mt5'
-                      ? (mt5Log?.openTrades ?? 0)
-                      : (derivLog?.openTrades ?? 0)
-                  )}
-                />
-              </div>
-            </div>
-          )
-        )}
-      </div>
-
-      <div className='grid gap-2 sm:grid-cols-2 lg:grid-cols-3'>
-        <MiniStat label='MT5 trades' value={String(mt5Log?.totalTrades ?? 0)} />
-        <MiniStat
-          label='Deriv trades'
-          value={String(derivLog?.totalTrades ?? 0)}
-        />
-        <MiniStat label='MT5 open' value={String(mt5Log?.openTrades ?? 0)} />
-        <MiniStat
-          label='Deriv open'
-          value={String(derivLog?.openTrades ?? 0)}
-        />
-        <MiniStat
-          label='Profit factor'
-          value={
-            analytics?.profitFactor == null
-              ? '—'
-              : analytics.profitFactor.toFixed(2)
-          }
-        />
-        <MiniStat
-          label='Win rate'
-          value={analytics ? `${(analytics.winRate * 100).toFixed(1)}%` : '—'}
-        />
-        <MiniStat
-          label='Gross profit'
-          value={analytics ? formatMoney(analytics.grossProfit) : '—'}
-        />
-        <MiniStat
-          label='Gross loss'
-          value={analytics ? formatMoney(analytics.grossLoss) : '—'}
-        />
-      </div>
+    <div className='grid gap-2 sm:grid-cols-2 lg:grid-cols-3'>
+      <MiniStat
+        label='MT5 closed trades'
+        value={String(analytics?.closedTrades ?? mt5Log?.totalTrades ?? 0)}
+      />
+      <MiniStat
+        label='MT5 open trades'
+        value={String(mt5Log?.openTrades ?? 0)}
+      />
+      <MiniStat
+        label='Profit factor'
+        value={
+          analytics?.profitFactor == null
+            ? '—'
+            : analytics.profitFactor.toFixed(2)
+        }
+      />
+      <MiniStat
+        label='Win rate'
+        value={analytics ? `${(analytics.winRate * 100).toFixed(1)}%` : '—'}
+      />
+      <MiniStat
+        label='Gross profit'
+        value={analytics ? formatMoney(analytics.grossProfit) : '—'}
+      />
+      <MiniStat
+        label='Gross loss'
+        value={analytics ? formatMoney(analytics.grossLoss) : '—'}
+      />
+      <MiniStat
+        label='MT5 net P/L'
+        value={analytics ? formatMoney(analytics.netProfit) : '—'}
+      />
+      <MiniStat
+        label='MT5 gross profit'
+        value={analytics ? formatMoney(analytics.grossProfit) : '—'}
+      />
+      <MiniStat
+        label='MT5 gross loss'
+        value={analytics ? formatMoney(analytics.grossLoss) : '—'}
+      />
     </div>
   );
 }
@@ -1386,7 +1013,7 @@ function BrokerLatestTradesTables({
   setPage: (n: number) => void;
   total: number | null;
 }) {
-  const brokerOrder = ['mt5', 'deriv_ws'] as const;
+  const brokerOrder = ['mt5'] as const;
   const brokerRows = brokerOrder.map((brokerType) => ({
     brokerType,
     rows: (rows || []).filter((row) => row.brokerType === brokerType),
@@ -1500,7 +1127,7 @@ function BrokerPerInstrumentTables({
 }: {
   rows: AnalyticsSummary['bySymbol'];
 }) {
-  const brokerOrder = ['mt5', 'deriv_ws'] as const;
+  const brokerOrder = ['mt5'] as const;
   const brokerRows = brokerOrder.map((brokerType) => ({
     brokerType,
     rows: (rows || []).filter((row) => row.brokerType === brokerType),
@@ -1643,13 +1270,11 @@ function RecentActivityTable({
   pageSize,
   total,
   totalPages,
-  broker,
   type,
   loading,
   failed,
   onPageChange,
   onPageSizeChange,
-  onBrokerChange,
   onTypeChange,
 }: {
   rows: LogEntry[];
@@ -1657,13 +1282,11 @@ function RecentActivityTable({
   pageSize: number;
   total: number;
   totalPages: number;
-  broker: '' | 'deriv_ws' | 'mt5';
   type: string;
   loading: boolean;
   failed: boolean;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
-  onBrokerChange: (broker: string) => void;
   onTypeChange: (type: string) => void;
 }) {
   const [selectedRow, setSelectedRow] = useState<LogEntry | null>(null);
@@ -1684,18 +1307,6 @@ function RecentActivityTable({
   return (
     <div className='space-y-4'>
       <div className='flex flex-wrap items-end gap-3'>
-        <div className='w-full sm:w-48'>
-          <SelectField
-            label='Broker'
-            value={broker}
-            onChange={onBrokerChange}
-            options={[
-              { value: '', label: 'All brokers' },
-              { value: 'deriv_ws', label: 'Deriv' },
-              { value: 'mt5', label: 'MT5' },
-            ]}
-          />
-        </div>
         <div className='w-full sm:w-56'>
           <SelectField
             label='Event type'
@@ -1753,17 +1364,8 @@ function RecentActivityTable({
                 <tr key={row._id}>
                   <td className='py-2.5'>{row.type}</td>
                   <td className='py-2.5'>
-                    <span
-                      className={`rounded px-2 py-1 text-[10px] font-semibold uppercase ${
-                        row.brokerType === 'mt5'
-                          ? 'bg-sky-500/15 text-sky-300'
-                          : 'bg-muted text-muted-foreground'
-                      }`}
-                    >
-                      {String(
-                        row.brokerLabel ??
-                          (row.brokerType === 'mt5' ? 'MT5' : 'Deriv')
-                      )}
+                    <span className='rounded bg-sky-500/15 px-2 py-1 text-[10px] font-semibold uppercase text-sky-300'>
+                      MT5
                     </span>
                   </td>
                   <td className='py-2.5 text-muted-foreground'>
