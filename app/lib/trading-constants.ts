@@ -5,6 +5,7 @@ import type {
 } from '../api-client';
 
 export const ASSET_CLASS_OPTIONS = [
+  { value: 'Synthetic Indices', label: 'Synthetic Indices' },
   { value: 'Forex', label: 'Forex' },
   { value: 'Stocks', label: 'Stocks' },
   { value: 'Commodities', label: 'Commodities' },
@@ -32,6 +33,28 @@ export type SymbolCatalog = Partial<
 
 export const SYMBOL_OPTIONS_BY_BROKER_AND_CLASS: SymbolCatalog = {
   mt5: {
+    'Synthetic Indices': [
+      'Volatility 10 Index',
+      'Volatility 25 Index',
+      'Volatility 50 Index',
+      'Volatility 75 Index',
+      'Volatility 100 Index',
+      'Volatility 10 (1s) Index',
+      'Volatility 25 (1s) Index',
+      'Volatility 50 (1s) Index',
+      'Volatility 75 (1s) Index',
+      'Volatility 100 (1s) Index',
+      'Volatility 150 (1s) Index',
+      'Volatility 250 (1s) Index',
+      'Volatility 15 (1s) Index',
+      'Volatility 30 (1s) Index',
+      'Volatility 90 (1s) Index',
+      'Volatility 5 Index',
+      'Volatility 5 (1s) Index',
+      'Volatility 15 Index',
+      'Volatility 30 Index',
+      'Volatility 90 Index',
+    ],
     Forex: ['EURUSD', 'GBPUSD', 'USDJPY'],
     Commodities: ['GOLD'],
     Indices: ['US500'],
