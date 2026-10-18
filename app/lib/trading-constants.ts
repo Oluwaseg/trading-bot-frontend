@@ -56,7 +56,7 @@ export const SYMBOL_OPTIONS_BY_BROKER_AND_CLASS: SymbolCatalog = {
       'Volatility 90 Index',
     ],
     Forex: ['EURUSD', 'GBPUSD', 'USDJPY'],
-    Commodities: ['GOLD'],
+    Commodities: ['XAUUSD'],
     Indices: ['US500'],
     Crypto: [],
   },
