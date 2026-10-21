@@ -4,7 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   Mt5Account,
   Mt5Connector,
@@ -90,6 +90,18 @@ function useTradingDashboardInternal() {
     enabled: !!currentUser,
     ...poll,
   });
+
+  useEffect(() => {
+    const accounts = mt5AccountsQuery.data;
+    if (!accounts?.length) return;
+
+    setNewInstrument((current) => {
+      if (accounts.some((account) => account.id === current.mt5AccountId)) {
+        return current;
+      }
+      return { ...current, mt5AccountId: accounts[0].id };
+    });
+  }, [mt5AccountsQuery.data]);
 
   const mt5WorkerStatusQueries = useQueries({
     queries: (mt5AccountsQuery.data || []).map((account) => ({
